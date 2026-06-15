@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The Garden (map 1), dark ramp sky. -->
+    <color name="splash_background">#121810</color>
+</resources>
