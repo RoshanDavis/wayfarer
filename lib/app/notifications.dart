@@ -1,6 +1,6 @@
 /// Session-end notifications — the only notification this app may ever send.
 ///
-/// One exact local notification is scheduled when a focus session or break
+/// One local notification is scheduled when a focus session or break
 /// starts, announcing its completion; it is cancelled on pause, early end, or
 /// live in-app completion. Notifications are presentation only: timer
 /// correctness never depends on them.
@@ -69,29 +69,19 @@ class NotificationService {
     final when = tz.TZDateTime.fromMillisecondsSinceEpoch(
         tz.UTC, atMs + graceMs);
     try {
+      // Inexact scheduling — the app requests no exact-alarm permission (Google
+      // Play restricts USE_EXACT_ALARM to clock/calendar apps). The banner may
+      // arrive a little late under Doze; when the app is open the live reveal
+      // announces completion first, and correctness never depends on it.
       await _plugin.zonedSchedule(
         phaseEndId,
         title,
         body,
         when,
         details,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );
-    } catch (_) {
-      // Exact alarms unavailable (policy/permission): fall back to inexact —
-      // a slightly late announcement beats none, and correctness never
-      // depends on it.
-      try {
-        await _plugin.zonedSchedule(
-          phaseEndId,
-          title,
-          body,
-          when,
-          details,
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        );
-      } catch (_) {}
-    }
+    } catch (_) {}
   }
 
   Future<void> cancelPhaseEnd() async {

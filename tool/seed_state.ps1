@@ -7,7 +7,7 @@ param(
 )
 
 $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-$pkg = "com.wayfarer.app"
+$pkg = "com.wayfarer_pomodoro.app"
 
 # XML-escape the JSON payload (& < > only; quotes are fine in text nodes).
 $escaped = $Json.Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;')

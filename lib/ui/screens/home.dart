@@ -88,7 +88,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final media = MediaQuery.of(context);
     final topInset = media.viewPadding.top;
     final screenH = media.size.height;
-    final headerHeight = topInset + 232;
+    // 240 (not 232) gives the header enough slack for the countdown numeral at
+    // its max size on wider/tablet screens, where it would otherwise overflow
+    // the fixed header by ~1px. Imperceptible on phones (see-through lower edge).
+    final headerHeight = topInset + 240;
     _panelHeight = screenH - headerHeight;
     final reduceMotion = media.disableAnimations;
 
@@ -371,7 +374,10 @@ class _Countdown extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = PaletteScope.of(context);
     final w = MediaQuery.sizeOf(context).width;
-    final size = (w * 0.235).clamp(64.0, 112.0);
+    // Cap at 104 (not 112): only wide/tablet widths reach the cap, where a
+    // taller numeral would overflow the fixed-height header. Phones compute
+    // well under this, so their countdown size is unchanged.
+    final size = (w * 0.235).clamp(64.0, 104.0);
     return AnimatedOpacity(
       opacity: dimmed ? 0.45 : 1.0,
       duration: const Duration(milliseconds: 500),

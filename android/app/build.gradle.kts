@@ -27,7 +27,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.wayfarer.app"
+        applicationId = "com.wayfarer_pomodoro.app"
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

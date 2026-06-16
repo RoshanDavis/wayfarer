@@ -1,12 +1,19 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Session-end notification: announces completion only — the single
          notification this app may ever send. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- Exact alarm for the session-end announcement; Wayfarer is a timer
-         app, the intended use of USE_EXACT_ALARM. Correctness never depends
-         on it (state reconstructs from wall-clock timestamps). -->
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- flutter_local_notifications declares these in its own manifest; strip
+         them at merge time. Wayfarer schedules inexactly (no exact-alarm
+         permission needed, and Google Play restricts exact alarms to
+         clock/calendar apps) and never vibrates. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"
+        tools:node="remove"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        tools:node="remove"/>
+    <uses-permission android:name="android.permission.VIBRATE"
+        tools:node="remove"/>
 
     <application
         android:label="Wayfarer"
