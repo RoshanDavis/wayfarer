@@ -62,33 +62,39 @@ int clampMinutes(int minutes, int lo, int hi) =>
 // XP economy
 // ---------------------------------------------------------------------------
 
-const int kXpPerSession = 10;
+/// Base XP earned per minute of focus. A full default 25-minute session earns
+/// 10 XP (0.4 × 25); time spent always counts, so ending early is still
+/// rewarded for the minutes worked.
+const double kXpPerFocusMinute = 0.4;
+
+/// Bonus XP for completing a full set (4 sessions). Not time- or stamina-scaled.
 const int kXpSetBonus = 10;
 
 // ---------------------------------------------------------------------------
 // Stamina
 // ---------------------------------------------------------------------------
 
-/// Stamina capacity in full focus sessions at level 1.
-const double kBaseStaminaCapacitySessions = 4.0;
+/// Stamina capacity in full focus sessions at level 1. A full session drains
+/// `100 / capacity` percent — at 2.0 that is 50% per session, so the bar empties
+/// after 50 minutes of focus at the default 25-minute length.
+const double kBaseStaminaCapacitySessions = 2.0;
 
 /// Additional capacity per level past 1.
-const double kStaminaCapacityPerLevel = 0.1;
+const double kStaminaCapacityPerLevel = 0.05;
 
-/// At or above this stamina percentage, travel is at full speed.
-const double kFullSpeedStaminaThreshold = 60.0;
-
-/// Speed multiplier at 0% stamina. Speed never drops below this — pillar 2.
+/// Speed and XP-per-time multiplier while fully drained. Above 0% stamina travel
+/// is at full speed and full XP; at exactly 0% both are halved, restoring the
+/// moment stamina rises above 0 — pillar 2 (nothing ever fully stops).
 const double kSpeedFloor = 0.5;
 
 const double kMaxStamina = 100.0;
 
-/// Hours of idle time (the focus timer not running) needed to passively refill
-/// a fully drained stamina bar. Breaks remain the fast, deliberate recovery;
-/// this is the slow background rest the body takes whenever you are not
-/// focusing — so stepping away for a while, or returning the next day, leaves
-/// you recovered.
-const double kIdleRecoveryHoursFull = 6.0;
+/// Minutes of any non-focus time (idle, paused, short or long break) needed to
+/// refill a fully drained stamina bar — the single recovery-rate knob. Kept
+/// independent of the long-break timer length so recovery feel and break
+/// duration tune separately. Defaults to the long-break default (15 min).
+const int kStaminaRecoveryMinutes = 15;
+const int kStaminaRecoveryMs = kStaminaRecoveryMinutes * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Pace and XP functions
@@ -132,6 +138,17 @@ LevelProgress applyXp(
   return LevelProgress(l, xp, l - level);
 }
 
+/// Base XP earned for [elapsedFocusMs] of focus, scaled by the stamina modifier
+/// (halved at 0% stamina, the same rule as speed). The set-completion bonus is
+/// added separately by the engine, so a full default 25-minute session yields
+/// 10 XP and a 20-minute early end yields 8.
+int xpForFocus(
+        {required int elapsedFocusMs, required double staminaAtSessionStart}) =>
+    (kXpPerFocusMinute *
+            (elapsedFocusMs / 60000) *
+            staminaSpeedModifier(staminaAtSessionStart))
+        .round();
+
 // ---------------------------------------------------------------------------
 // Stamina functions
 // ---------------------------------------------------------------------------
@@ -154,40 +171,18 @@ double drainFor({
 }) =>
     fullSessionDrain(level) * (elapsedFocusMs / focusDurationMs);
 
-/// Speed multiplier for a given stamina value: 1.0 at >= 60%, scaling
-/// linearly down to 0.5 at 0%. Never below 0.5, never zero.
-double staminaSpeedModifier(double stamina) {
-  if (stamina >= kFullSpeedStaminaThreshold) return 1.0;
-  final t = (stamina / kFullSpeedStaminaThreshold).clamp(0.0, 1.0);
-  return kSpeedFloor + (1.0 - kSpeedFloor) * t;
-}
+/// Speed/XP multiplier from stamina: full while any stamina remains, halved
+/// ([kSpeedFloor]) only when fully depleted. Restores to full the moment stamina
+/// rises above 0.
+double staminaSpeedModifier(double stamina) =>
+    stamina <= 0 ? kSpeedFloor : 1.0;
 
-/// Stamina passively recovered over [elapsedMs] of idle time (not focusing).
-///
-/// Linear in wall-clock time: an empty bar refills over
-/// [kIdleRecoveryHoursFull] hours. The caller decides which phases count as
-/// idle and clamps the resulting stamina to 100.
-double idleRecovery(int elapsedMs) => elapsedMs <= 0
-    ? 0
-    : kMaxStamina * (elapsedMs / (kIdleRecoveryHoursFull * 60 * 60 * 1000));
-
-/// Stamina restored by a break.
-///
-/// A fully completed short break restores one full session's drain at
-/// [level]; a fully completed long break restores the whole bar (the deficit
-/// from [staminaAtBreakStart] to 100). Partial breaks restore proportionally
-/// ([fraction] in 0..1). Caller clamps the resulting stamina to 100.
-double breakRecovery({
-  required bool isLong,
-  required int level,
-  required double staminaAtBreakStart,
-  required double fraction,
-}) {
-  final f = fraction.clamp(0.0, 1.0);
-  final amount =
-      isLong ? (kMaxStamina - staminaAtBreakStart) : fullSessionDrain(level);
-  return amount * f;
-}
+/// Stamina recovered over [elapsedMs] of any non-focus time — idle, paused, or a
+/// short/long break — all at the same rate: a fully drained bar refills over
+/// [kStaminaRecoveryMinutes]. The caller decides which phases count and clamps
+/// the resulting stamina to 100.
+double recovery(int elapsedMs) =>
+    elapsedMs <= 0 ? 0 : kMaxStamina * (elapsedMs / kStaminaRecoveryMs);
 
 // ---------------------------------------------------------------------------
 // Distance

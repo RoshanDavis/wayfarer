@@ -30,7 +30,7 @@ void main() {
       expect(s.lifetimeKm, closeTo(25 / 60, 1e-9));
       expect(s.xpIntoLevel, 10);
       expect(s.level, 1);
-      expect(s.stamina, closeTo(75, 1e-9));
+      expect(s.stamina, closeTo(50, 1e-9)); // one session drains half the bar
       expect(s.sessionsCompleted, 1);
       expect(s.sessionIndexInSet, 1);
       expect(s.setsCompleted, 0);
@@ -49,15 +49,16 @@ void main() {
       expect(s.lifetimeKm, closeTo(gm.paceKmh(3) * 25 / 60, 1e-9));
     });
 
-    test('stamina modifier is evaluated at session start and held constant',
-        () {
+    test('the speed modifier is locked at session start (full while > 0%)', () {
+      // Starts at 30% and drains to 0 mid-session, but travels at full speed the
+      // whole way because the modifier is fixed at session start (> 0%).
       final tired = GameState.initial.copyWith(stamina: 30);
       final s = completeOneSession(tired, t0);
-      // 30% stamina → modifier 0.75.
-      expect(s.lifetimeKm, closeTo(0.75 * 25 / 60, 1e-9));
+      expect(s.stamina, 0); // 30 − 50% drain, clamped at zero
+      expect(s.lifetimeKm, closeTo(25 / 60, 1e-9)); // full speed: started > 0
     });
 
-    test('the 50% speed floor still moves the runner at 0% stamina', () {
+    test('the 50% floor still moves the runner when started at 0% stamina', () {
       final exhausted = GameState.initial.copyWith(stamina: 0);
       final s = completeOneSession(exhausted, t0);
       expect(s.lifetimeKm, closeTo(0.5 * 25 / 60, 1e-9));
@@ -72,8 +73,8 @@ void main() {
       expect(s.timer.phase, Phase.focusPaused);
       expect(s.timer.accumulatedFocusMs, 10 * minMs);
       expect(s.timer.bankedDistanceKm, closeTo(0.4 * 25 / 60, 1e-9));
-      // 10 of 25 minutes drains 40% of a full session's drain.
-      expect(s.stamina, closeTo(100 - 0.4 * 25, 1e-9));
+      // 10 of 25 minutes drains 40% of a full session's 50% drain.
+      expect(s.stamina, closeTo(100 - 0.4 * 50, 1e-9));
       expect(s.lifetimeKm, 0); // odometer credited only at session end
     });
 
@@ -86,7 +87,9 @@ void main() {
       s = Engine.reconstruct(s, resumeAt + 15 * minMs);
       expect(s.timer.phase, Phase.focusComplete);
       expect(s.lifetimeKm, closeTo(25 / 60, 1e-9)); // full session distance
-      expect(s.stamina, closeTo(75, 1e-9)); // full session drain, once
+      // The 3-hour pause fully recovered the bar; the final 15-min segment then
+      // drains 30% (15 of 25 min × 50%).
+      expect(s.stamina, closeTo(70, 1e-9));
     });
 
     test('pausing while paused or idle is a no-op', () {
@@ -98,22 +101,24 @@ void main() {
   });
 
   group('ending early', () {
-    test('awards elapsed distance but no XP and no set progress', () {
+    test('awards elapsed distance and time XP, advances to a short break', () {
       var s = Engine.startFocus(GameState.initial, t0);
       s = Engine.endFocusEarly(s, t0 + 10 * minMs);
-      expect(s.timer.phase, Phase.idle);
+      // The focus ends and the user moves to the next session: a short break.
+      expect(s.timer.phase, Phase.focusComplete);
+      expect(s.timer.breakKind, BreakKind.short);
       expect(s.lifetimeKm, closeTo(0.4 * 25 / 60, 1e-9));
-      expect(s.xpIntoLevel, 0);
-      expect(s.sessionsCompleted, 0);
-      expect(s.sessionIndexInSet, 0);
-      expect(s.stamina, closeTo(90, 1e-9));
+      expect(s.xpIntoLevel, 4); // 0.4 XP/min × 10 min worked
+      expect(s.sessionsCompleted, 0); // not a completed session
+      expect(s.sessionIndexInSet, 0); // the set does not advance
+      expect(s.stamina, closeTo(80, 1e-9)); // 10 of 25 min drains 20%
       expect(s.totalFocusSeconds, 600);
       expect(s.dailyFocusMinutes[dateKey(t0 + 10 * minMs)], 10);
       final reveal = s.pendingReveal!;
       expect(reveal.sessionCompleted, isFalse);
-      expect(reveal.xpGained, 0);
+      expect(reveal.xpGained, 4);
       expect(reveal.distanceKm, closeTo(0.4 * 25 / 60, 1e-9));
-      expect(reveal.nextAction, NextAction.focus);
+      expect(reveal.nextAction, NextAction.shortBreak);
     });
 
     test('ending early from a paused session awards the banked distance', () {
@@ -121,7 +126,8 @@ void main() {
       s = Engine.pauseFocus(s, t0 + 5 * minMs);
       s = Engine.endFocusEarly(s, t0 + 60 * minMs);
       expect(s.lifetimeKm, closeTo(0.2 * 25 / 60, 1e-9));
-      expect(s.stamina, closeTo(95, 1e-9));
+      // Paused ~55 min at the long-break rate fully recovered the bar.
+      expect(s.stamina, closeTo(100, 1e-9));
     });
 
     test('an early end past the scheduled end resolves as a completion', () {
@@ -165,29 +171,31 @@ void main() {
       expect(s.sessionsCompleted, 1);
     });
 
-    test('a full short break restores one session of drain', () {
-      var s = completeOneSession(GameState.initial, t0); // stamina 75
+    test('a full short break recovers a third of the bar (long-break rate)', () {
+      var s = completeOneSession(GameState.initial, t0); // stamina 50
       final breakStart = t0 + 30 * minMs;
       s = Engine.startBreak(s, breakStart);
       expect(s.timer.phase, Phase.breakRunning);
       expect(s.timer.phaseEndsAtMs, breakStart + 5 * minMs);
       s = Engine.reconstruct(s, breakStart + 5 * minMs);
       expect(s.timer.phase, Phase.breakComplete);
-      expect(s.stamina, closeTo(100, 1e-9));
+      // 5 of 15 min restores a third of the bar.
+      expect(s.stamina, closeTo(50 + 100 / 3, 1e-9));
     });
 
     test('half a break restores half the recovery, continuously accrued', () {
-      var s = completeOneSession(GameState.initial, t0); // stamina 75
+      var s = completeOneSession(GameState.initial, t0); // stamina 50
       final breakStart = t0 + 30 * minMs;
       s = Engine.startBreak(s, breakStart);
       s = Engine.endBreakEarly(s, breakStart + 150 * 1000); // 2.5 of 5 min
       expect(s.timer.phase, Phase.breakComplete);
-      expect(s.stamina, closeTo(75 + 12.5, 1e-9));
+      // 2.5 of 15 min restores 100 × 2.5/15.
+      expect(s.stamina, closeTo(50 + 100 * 2.5 / 15, 1e-9));
     });
 
     test('recovery caps at 100 — over-resting gives nothing extra', () {
-      // A short break at level 1 restores 25 points; from 95 stamina the
-      // uncapped result would be 120.
+      // A short break restores 100 × 5/15 ≈ 33 points; from 95 the uncapped
+      // result would exceed 100.
       var s = GameState.initial.copyWith(
         stamina: 95,
         timer: TimerState(
@@ -217,15 +225,20 @@ void main() {
       expect(s.stamina, 100);
     });
 
-    test('a partial long break restores a proportional share of the deficit',
-        () {
-      var s = GameState.initial.copyWith(stamina: 40, sessionIndexInSet: 3);
-      s = completeOneSession(s, t0);
-      final atBreakStart = s.stamina; // 15
-      s = Engine.startBreak(s, t0 + 30 * minMs);
-      s = Engine.endBreakEarly(s, t0 + 30 * minMs + 5 * minMs); // 1/3 of 15
-      expect(
-          s.stamina, closeTo(atBreakStart + (100 - atBreakStart) / 3, 1e-9));
+    test('a partial long break recovers at the long-break rate', () {
+      var s = GameState.initial.copyWith(
+        stamina: 40,
+        timer: TimerState(
+          phase: Phase.breakRunning,
+          breakKind: BreakKind.long,
+          segmentStartedAtMs: t0,
+          phaseEndsAtMs: t0 + 15 * minMs,
+          staminaAtBreakStart: 40,
+          plannedDurationMs: 15 * minMs,
+        ),
+      );
+      s = Engine.endBreakEarly(s, t0 + 5 * minMs); // 1/3 of the long break
+      expect(s.stamina, closeTo(40 + 100 / 3, 1e-9));
     });
 
     test('skipping a break gives no recovery but keeps the distance reveal',
@@ -249,22 +262,27 @@ void main() {
 
     test('starting focus from a running break applies partial recovery first',
         () {
-      var s = completeOneSession(GameState.initial, t0); // 75
+      var s = completeOneSession(GameState.initial, t0); // 50
       s = Engine.startBreak(s, t0 + 30 * minMs);
-      final at = t0 + 30 * minMs + 150 * 1000;
+      final at = t0 + 30 * minMs + 150 * 1000; // 2.5 of 5 min
       s = Engine.startFocus(Engine.endBreakEarly(s, at), at);
       expect(s.timer.phase, Phase.focusRunning);
-      expect(s.timer.staminaAtSessionStart, closeTo(87.5, 1e-9));
+      expect(s.timer.staminaAtSessionStart, closeTo(50 + 100 * 2.5 / 15, 1e-9));
     });
   });
 
   group('idle recovery', () {
-    test('idle time between sessions recovers stamina on reconstruct', () {
-      var s = completeOneSession(GameState.initial, t0); // stamina 75
+    test('idle time between sessions recovers at the long-break rate', () {
+      var s = completeOneSession(GameState.initial, t0); // stamina 50
       s = Engine.skipBreak(s); // → idle, sync anchored at completion
-      // One hour of idle recovers a proportional share of a full bar.
-      s = Engine.reconstruct(s, t0 + 25 * minMs + 60 * minMs);
-      expect(s.stamina, closeTo(75 + gm.idleRecovery(60 * minMs), 1e-9));
+      // 3 of 15 min recovers a fifth of the bar.
+      s = Engine.reconstruct(s, t0 + 25 * minMs + 3 * minMs);
+      expect(
+          s.stamina,
+          closeTo(
+              50 +
+                  gm.recovery(3 * minMs),
+              1e-9));
     });
 
     test('idle recovery never exceeds a full bar', () {
@@ -274,21 +292,30 @@ void main() {
       expect(s.stamina, 100);
     });
 
-    test('a paused session does not recover — pausing freezes the bar', () {
+    test('a paused session recovers at the long-break rate', () {
       var s = Engine.startFocus(GameState.initial, t0);
-      s = Engine.pauseFocus(s, t0 + 10 * minMs); // stamina 90
-      s = Engine.reconstruct(s, t0 + 5 * 60 * minMs); // 5h paused
+      s = Engine.pauseFocus(s, t0 + 10 * minMs); // stamina 80, synced at pause
+      // 2 of 15 min of pause recovers 100 × 2/15.
+      s = Engine.reconstruct(s, t0 + 10 * minMs + 2 * minMs);
       expect(s.timer.phase, Phase.focusPaused);
-      expect(s.stamina, closeTo(90, 1e-9));
+      expect(
+          s.stamina,
+          closeTo(
+              80 + gm.recovery(2 * minMs),
+              1e-9));
     });
 
     test('starting a session credits the idle rest taken since the last', () {
-      var s = completeOneSession(GameState.initial, t0); // 75
+      var s = completeOneSession(GameState.initial, t0); // 50
       s = Engine.skipBreak(s);
-      final start = t0 + 25 * minMs + 60 * minMs; // an hour later
+      final start = t0 + 25 * minMs + 3 * minMs;
       s = Engine.startFocus(s, start);
-      expect(s.timer.staminaAtSessionStart,
-          closeTo(75 + gm.idleRecovery(60 * minMs), 1e-9));
+      expect(
+          s.timer.staminaAtSessionStart,
+          closeTo(
+              50 +
+                  gm.recovery(3 * minMs),
+              1e-9));
     });
   });
 
@@ -362,23 +389,24 @@ void main() {
       expect(s.timer.phase, Phase.focusComplete);
       // Distance scales with real time: 50 min at 1 km/h = 50/60 km.
       expect(s.lifetimeKm, closeTo(50 / 60, 1e-9));
-      // Drain is still one full session regardless of length.
-      expect(s.stamina, closeTo(75, 1e-9));
+      // Drain is still one full session (50%) regardless of length.
+      expect(s.stamina, closeTo(50, 1e-9));
       // Focus time and daily minutes credit the configured length.
       expect(s.totalFocusSeconds, 3000);
       expect(s.dailyFocusMinutes[dateKey(t0 + fifty)], 50);
     });
 
-    test('a custom short break still restores one full session of drain', () {
+    test('a custom short break recovers at the long-break rate', () {
       var s = Engine.startFocus(withFocus(50), t0);
-      s = Engine.reconstruct(s, t0 + 50 * minMs); // stamina 75
+      s = Engine.reconstruct(s, t0 + 50 * minMs); // stamina 50
       final settings = s.settings.copyWith(shortBreakMinutes: 10);
       s = s.copyWith(settings: settings);
       final breakStart = t0 + 60 * minMs;
       s = Engine.startBreak(s, breakStart);
       expect(s.timer.plannedDurationMs, 10 * minMs);
-      s = Engine.endBreakEarly(s, breakStart + 5 * minMs); // half of 10 min
-      expect(s.stamina, closeTo(75 + 12.5, 1e-9));
+      s = Engine.endBreakEarly(s, breakStart + 5 * minMs); // 5 of 10 min
+      // 5 min of rest at the 15-min long-break rate restores 100 × 5/15.
+      expect(s.stamina, closeTo(50 + 100 * 5 / 15, 1e-9));
     });
 
     test('editing durations mid-session does not change the in-flight phase',

@@ -216,28 +216,21 @@ class AppController extends ChangeNotifier {
         );
         return (_state.stamina - drain).clamp(0.0, gm.kMaxStamina);
       case Phase.breakRunning:
-        final total = t.plannedDurationMs;
-        final fraction =
-            ((now - (t.segmentStartedAtMs ?? now)) / total).clamp(0.0, 1.0);
-        final recovery = gm.breakRecovery(
-          isLong: t.breakKind == BreakKind.long,
-          level: _state.level,
-          staminaAtBreakStart: t.staminaAtBreakStart,
-          fraction: fraction,
-        );
-        return (t.staminaAtBreakStart + recovery).clamp(0.0, gm.kMaxStamina);
+        final elapsed = (now - (t.segmentStartedAtMs ?? now))
+            .clamp(0, t.plannedDurationMs);
+        final recovered = gm.recovery(elapsed);
+        return (t.staminaAtBreakStart + recovered).clamp(0.0, gm.kMaxStamina);
       case Phase.focusPaused:
-        // Pausing freezes the bar — no drain, no recovery.
-        return _state.stamina;
       case Phase.idle:
       case Phase.focusComplete:
       case Phase.breakComplete:
-        // Resting: project passive idle recovery accrued since the last sync.
+        // Resting (incl. paused): project long-break-rate recovery accrued
+        // since the last sync point.
         final since = _state.staminaSyncedAtMs;
         if (since <= 0 || _state.stamina >= gm.kMaxStamina) {
           return _state.stamina;
         }
-        return (_state.stamina + gm.idleRecovery(now - since))
+        return (_state.stamina + gm.recovery(now - since))
             .clamp(0.0, gm.kMaxStamina);
     }
   }
@@ -275,6 +268,7 @@ class AppController extends ChangeNotifier {
 
   static bool _restingPhase(Phase phase) =>
       phase == Phase.idle ||
+      phase == Phase.focusPaused ||
       phase == Phase.focusComplete ||
       phase == Phase.breakComplete;
 

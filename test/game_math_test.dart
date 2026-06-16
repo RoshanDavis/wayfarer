@@ -69,10 +69,12 @@ void main() {
   });
 
   group('stamina', () {
-    test('capacity grows +0.1 sessions per level', () {
-      expect(staminaCapacitySessions(1), 4.0);
-      expect(staminaCapacitySessions(11), closeTo(5.0, 1e-9));
-      expect(fullSessionDrain(1), 25.0);
+    test('capacity grows +0.05 sessions per level; drains 50% per session', () {
+      expect(staminaCapacitySessions(1), 2.0);
+      expect(staminaCapacitySessions(11), closeTo(2.5, 1e-9));
+      // 2× faster than before: one full session at L1 drains half the bar, so
+      // it empties after two sessions (50 min of focus).
+      expect(fullSessionDrain(1), 50.0);
     });
 
     test('drain is proportional to elapsed focus time', () {
@@ -98,60 +100,46 @@ void main() {
           closeTo(full * 0.5, 1e-9));
     });
 
-    test('speed modifier: full speed at 60-100%, linear below, 50% floor', () {
+    test('speed modifier: full while any stamina remains, halved only at 0%',
+        () {
       expect(staminaSpeedModifier(100), 1.0);
       expect(staminaSpeedModifier(60), 1.0);
-      expect(staminaSpeedModifier(30), closeTo(0.75, 1e-9));
+      expect(staminaSpeedModifier(1), 1.0);
       expect(staminaSpeedModifier(0), 0.5);
       // Never below the floor, never zero.
       expect(staminaSpeedModifier(-5), 0.5);
     });
 
-    test('short break recovery restores one session drain, proportionally',
-        () {
-      final oneSession = fullSessionDrain(1);
+    test('recovery refills a full bar over kStaminaRecoveryMinutes', () {
+      // A full recovery window's worth of any non-focus time refills the bar...
+      expect(recovery(kStaminaRecoveryMs), closeTo(kMaxStamina, 1e-9));
+      // ...linearly, so 5 of the 15 recovery minutes restores a third.
+      expect(recovery(5 * 60 * 1000), closeTo(kMaxStamina / 3, 1e-9));
+      expect(recovery(0), 0);
+      expect(recovery(-1000), 0);
+    });
+  });
+
+  group('focus XP', () {
+    test('a full default 25-minute session earns 10 XP', () {
       expect(
-          breakRecovery(
-              isLong: false, level: 1, staminaAtBreakStart: 50, fraction: 1.0),
-          closeTo(oneSession, 1e-9));
-      expect(
-          breakRecovery(
-              isLong: false, level: 1, staminaAtBreakStart: 50, fraction: 0.5),
-          closeTo(oneSession * 0.5, 1e-9));
-      expect(
-          breakRecovery(
-              isLong: false, level: 1, staminaAtBreakStart: 50, fraction: 0),
-          0);
+          xpForFocus(elapsedFocusMs: kFocusMs, staminaAtSessionStart: 100), 10);
     });
 
-    test('long break restores the full bar, proportionally', () {
+    test('XP scales with the minutes actually spent', () {
       expect(
-          breakRecovery(
-              isLong: true, level: 1, staminaAtBreakStart: 20, fraction: 1.0),
-          closeTo(80, 1e-9));
+          xpForFocus(
+              elapsedFocusMs: 20 * 60 * 1000, staminaAtSessionStart: 100),
+          8);
       expect(
-          breakRecovery(
-              isLong: true, level: 1, staminaAtBreakStart: 20, fraction: 0.25),
-          closeTo(20, 1e-9));
+          xpForFocus(
+              elapsedFocusMs: 50 * 60 * 1000, staminaAtSessionStart: 100),
+          20);
+      expect(xpForFocus(elapsedFocusMs: 0, staminaAtSessionStart: 100), 0);
     });
 
-    test('over-resting fraction is clamped', () {
-      expect(
-          breakRecovery(
-              isLong: false, level: 1, staminaAtBreakStart: 50, fraction: 1.7),
-          closeTo(fullSessionDrain(1), 1e-9));
-    });
-
-    test('idle recovery refills a full bar over the configured idle hours', () {
-      const hourMs = 60 * 60 * 1000;
-      // An empty bar's worth accrues over kIdleRecoveryHoursFull hours...
-      expect(idleRecovery((kIdleRecoveryHoursFull * hourMs).round()),
-          closeTo(kMaxStamina, 1e-9));
-      // ...linearly, and never negative for a non-positive gap.
-      expect(idleRecovery(hourMs),
-          closeTo(kMaxStamina / kIdleRecoveryHoursFull, 1e-9));
-      expect(idleRecovery(0), 0);
-      expect(idleRecovery(-hourMs), 0);
+    test('XP per time is halved at 0% stamina', () {
+      expect(xpForFocus(elapsedFocusMs: kFocusMs, staminaAtSessionStart: 0), 5);
     });
   });
 
