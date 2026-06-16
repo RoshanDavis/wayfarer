@@ -92,14 +92,15 @@ void main() {
   });
 
   group('killed mid-pause', () {
-    test('a paused session waits indefinitely without change', () {
+    test('a paused session keeps its banked progress and recovers stamina', () {
       var s = Engine.startFocus(GameState.initial, t0);
       s = Engine.pauseFocus(s, t0 + 10 * minMs);
       final wake = killAndRelaunch(s, t0 + 30 * 24 * hourMs); // a month later
       expect(wake.timer.phase, Phase.focusPaused);
       expect(wake.timer.accumulatedFocusMs, 10 * minMs);
       expect(wake.timer.bankedDistanceKm, closeTo(0.4 * 25 / 60, 1e-9));
-      expect(wake.stamina, closeTo(90, 1e-9));
+      // Banked focus is preserved; stamina recovers at the long-break rate.
+      expect(wake.stamina, closeTo(100, 1e-9));
     });
   });
 
@@ -115,7 +116,7 @@ void main() {
 
     test('after the break end: full recovery applied exactly once', () {
       var s = Engine.startFocus(GameState.initial, t0);
-      s = Engine.reconstruct(s, t0 + 25 * minMs); // stamina 75
+      s = Engine.reconstruct(s, t0 + 25 * minMs); // stamina 50
       s = Engine.startBreak(s, t0 + 30 * minMs);
       final wake = killAndRelaunch(s, t0 + 8 * hourMs);
       expect(wake.timer.phase, Phase.breakComplete);

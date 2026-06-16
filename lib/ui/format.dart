@@ -20,10 +20,11 @@ String formatKm(double km, {bool withUnit = true}) {
   return withUnit ? '$number km' : number;
 }
 
-/// "1.0 km/h", "54 km/h", "703,432 km/h".
+/// "1.00 km/h", "1.07 km/h", "54 km/h", "703,432 km/h". Two decimals below
+/// 10 km/h so each level's 7% pace step is always visible.
 String formatPace(double kmh) {
   final number =
-      kmh < 10 ? kmh.toStringAsFixed(1) : thousands(kmh.round());
+      kmh < 10 ? kmh.toStringAsFixed(2) : thousands(kmh.round());
   return '$number km/h';
 }
 

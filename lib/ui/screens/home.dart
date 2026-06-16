@@ -683,12 +683,12 @@ class _ProgressSection extends StatelessWidget {
         _Meter(
           label: 'STAMINA',
           value: '${stamina.round()}%',
-          caption: stamina >= 60
-              ? 'full pace'
-              : stamina <= 0
-                  ? 'resting needed'
-                  : stamina >= 100
-                      ? 'fully rested'
+          caption: stamina <= 0
+              ? 'need rest'
+              : state.timer.phase == Phase.focusRunning
+                  ? 'full pace'
+                  : stamina.round() >= 100
+                      ? 'rested'
                       : 'recovering',
           fraction: staminaFrac,
         ),

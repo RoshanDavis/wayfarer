@@ -78,6 +78,8 @@ class Engine {
     );
     return s.copyWith(
       stamina: (s.stamina - drain).clamp(0.0, gm.kMaxStamina),
+      // Anchor the recovery clock: a paused session rests at the long-break rate.
+      staminaSyncedAtMs: nowMs,
       timer: t.copyWith(
         phase: Phase.focusPaused,
         clearSegment: true,
@@ -89,9 +91,11 @@ class Engine {
 
   /// Resumes a paused focus session.
   static GameState resumeFocus(GameState s, int nowMs) {
-    final t = s.timer;
-    if (t.phase != Phase.focusPaused) return s;
-    return s.copyWith(
+    if (s.timer.phase != Phase.focusPaused) return s;
+    // Credit the rest taken while paused up to now, then restart the clock.
+    final rested = _applyIdleRecovery(s, nowMs);
+    final t = rested.timer;
+    return rested.copyWith(
       timer: t.copyWith(
         phase: Phase.focusRunning,
         segmentStartedAtMs: nowMs,
@@ -100,41 +104,36 @@ class Engine {
     );
   }
 
-  /// Ends a focus session early. Distance traveled is awarded (never
-  /// confiscated); no XP, no set progress. Valid from running or paused.
+  /// Ends a focus session early. Distance and time-based XP for the minutes
+  /// worked are awarded (never confiscated), but the session does not count
+  /// toward the set — the focus simply ends and the user advances to the next
+  /// session, a short break. Valid from running or paused.
   static GameState endFocusEarly(GameState s, int nowMs) {
     var state = s;
     if (state.timer.phase == Phase.focusRunning) {
       if (nowMs >= state.timer.phaseEndsAtMs!) return reconstruct(s, nowMs);
       state = pauseFocus(state, nowMs);
     }
+    if (state.timer.phase != Phase.focusPaused) return s;
+    // Credit any rest taken while paused before awarding, so the bar is current.
+    state = _applyIdleRecovery(state, nowMs);
     final t = state.timer;
-    if (t.phase != Phase.focusPaused) return s;
 
     final distance = t.bankedDistanceKm;
     final elapsedMs = t.accumulatedFocusMs;
-    final oldKm = state.lifetimeKm;
-    final newKm = oldKm + distance;
-    final odoBadges = [
-      for (final m in milestonesCrossedBetween(oldKm, newKm))
-        if (!state.badgeIds.contains(m.id)) m.id,
-    ];
-    return state.copyWith(
-      lifetimeKm: newKm,
-      totalFocusSeconds: state.totalFocusSeconds + elapsedMs ~/ 1000,
-      badgeIds: {...state.badgeIds, ...odoBadges},
-      dailyFocusMinutes: _addDailyMinutes(
-          state.dailyFocusMinutes, dateKey(nowMs), elapsedMs ~/ 60000),
-      staminaSyncedAtMs: nowMs,
-      timer: TimerState.idle,
-      pendingReveal: RevealSequence(
-        distanceKm: distance,
-        sessionCompleted: false,
-        levelBefore: state.level,
-        levelAfter: state.level,
-        badgeIds: odoBadges,
-        nextAction: NextAction.focus,
-      ),
+    // Nothing worked yet — return to idle rather than offering a break.
+    if (elapsedMs <= 0 && distance <= 0) {
+      return state.copyWith(timer: TimerState.idle, staminaSyncedAtMs: nowMs);
+    }
+    return _finishFocus(
+      state,
+      stamina: state.stamina,
+      distance: distance,
+      elapsedFocusMs: elapsedMs,
+      staminaAtSessionStart: t.staminaAtSessionStart,
+      completed: false,
+      dayKeyMs: nowMs,
+      syncAtMs: nowMs,
     );
   }
 
@@ -236,13 +235,52 @@ class Engine {
     );
     final stamina = (s.stamina - drain).clamp(0.0, gm.kMaxStamina);
 
+    return _finishFocus(
+      s,
+      stamina: stamina,
+      distance: distance,
+      elapsedFocusMs: focusDurationMs,
+      staminaAtSessionStart: t.staminaAtSessionStart,
+      completed: true,
+      // Idle recovery accrues from the moment focus ended, not from when we
+      // noticed — so a late wake-up still credits the full rest since.
+      dayKeyMs: endMs,
+      syncAtMs: endMs,
+    );
+  }
+
+  /// Shared tail of finishing a focus segment: awards time-based XP (plus the
+  /// set bonus on a full set), resolves level-ups and tier/comparison/odometer/
+  /// map badges, banks distance and focus time, and routes to the pending-break
+  /// (focusComplete) state. [completed] distinguishes a full session — which
+  /// counts the session and set, adds the set bonus and map progression, and
+  /// takes the long break every 4th — from an early end, which counts neither
+  /// and always takes a short break (the long break is earned only by finishing
+  /// a set).
+  static GameState _finishFocus(
+    GameState s, {
+    required double stamina,
+    required double distance,
+    required int elapsedFocusMs,
+    required double staminaAtSessionStart,
+    required bool completed,
+    required int dayKeyMs,
+    required int syncAtMs,
+  }) {
     // Set and session counting. A session only counts when fully completed.
-    final completedSet = s.sessionIndexInSet == gm.kSessionsPerSet - 1;
-    final newSessionIndex = (s.sessionIndexInSet + 1) % gm.kSessionsPerSet;
+    final completedSet =
+        completed && s.sessionIndexInSet == gm.kSessionsPerSet - 1;
+    final newSessionIndex = completed
+        ? (s.sessionIndexInSet + 1) % gm.kSessionsPerSet
+        : s.sessionIndexInSet;
     final newSets = s.setsCompleted + (completedSet ? 1 : 0);
 
-    // XP and level-ups.
-    final xpGained = gm.kXpPerSession + (completedSet ? gm.kXpSetBonus : 0);
+    // XP and level-ups: time-based base (halved at 0% stamina) + set bonus.
+    final xpGained = gm.xpForFocus(
+          elapsedFocusMs: elapsedFocusMs,
+          staminaAtSessionStart: staminaAtSessionStart,
+        ) +
+        (completedSet ? gm.kXpSetBonus : 0);
     final progress = gm.applyXp(
         level: s.level, xpIntoLevel: s.xpIntoLevel, gained: xpGained);
 
@@ -280,27 +318,26 @@ class Engine {
       for (final m in milestones) m.id,
     ];
 
-    final nextBreak = newSessionIndex == 0 ? BreakKind.long : BreakKind.short;
+    final nextBreak =
+        completed && newSessionIndex == 0 ? BreakKind.long : BreakKind.short;
 
     return s.copyWith(
       stamina: stamina,
       lifetimeKm: newKm,
-      totalFocusSeconds: s.totalFocusSeconds + focusDurationMs ~/ 1000,
-      sessionsCompleted: s.sessionsCompleted + 1,
+      totalFocusSeconds: s.totalFocusSeconds + elapsedFocusMs ~/ 1000,
+      sessionsCompleted: s.sessionsCompleted + (completed ? 1 : 0),
       setsCompleted: newSets,
       sessionIndexInSet: newSessionIndex,
       xpIntoLevel: progress.xpIntoLevel,
       level: progress.level,
       badgeIds: {...s.badgeIds, ...newBadgeIds},
       dailyFocusMinutes: _addDailyMinutes(
-          s.dailyFocusMinutes, dateKey(endMs), focusDurationMs ~/ 60000),
-      // Idle recovery accrues from the moment focus ended, not from when we
-      // noticed — so a late wake-up still credits the full rest since.
-      staminaSyncedAtMs: endMs,
+          s.dailyFocusMinutes, dateKey(dayKeyMs), elapsedFocusMs ~/ 60000),
+      staminaSyncedAtMs: syncAtMs,
       timer: TimerState(phase: Phase.focusComplete, breakKind: nextBreak),
       pendingReveal: RevealSequence(
         distanceKm: distance,
-        sessionCompleted: true,
+        sessionCompleted: completed,
         xpGained: xpGained,
         levelBefore: s.level,
         levelAfter: progress.level,
@@ -320,34 +357,32 @@ class Engine {
   /// start, so it is idempotent under reconstruction.
   static GameState _finishBreak(GameState s, double fraction, int endedAtMs) {
     final t = s.timer;
-    final recovery = gm.breakRecovery(
-      isLong: t.breakKind == BreakKind.long,
-      level: s.level,
-      staminaAtBreakStart: t.staminaAtBreakStart,
-      fraction: fraction,
-    );
+    final recovered =
+        gm.recovery((fraction.clamp(0.0, 1.0) * t.plannedDurationMs).round());
     return s.copyWith(
       stamina:
-          (t.staminaAtBreakStart + recovery).clamp(0.0, gm.kMaxStamina),
+          (t.staminaAtBreakStart + recovered).clamp(0.0, gm.kMaxStamina),
       // Passive idle recovery resumes from the break's end.
       staminaSyncedAtMs: endedAtMs,
       timer: TimerState(phase: Phase.breakComplete, breakKind: t.breakKind),
     );
   }
 
-  /// True for phases where the focus timer is not running and stamina passively
-  /// recovers: between sessions (idle), after a finished session awaiting a
-  /// break (focusComplete), and after a finished break (breakComplete). A
-  /// *paused* session is deliberately excluded — pausing freezes everything.
+  /// True for phases where the focus timer is not running and stamina recovers
+  /// at the long-break rate: between sessions (idle), after a finished session
+  /// awaiting a break (focusComplete), after a finished break (breakComplete),
+  /// and while a session is paused.
   static bool _restsBetweenFocus(Phase phase) =>
       phase == Phase.idle ||
+      phase == Phase.focusPaused ||
       phase == Phase.focusComplete ||
       phase == Phase.breakComplete;
 
-  /// Accrues passive idle recovery onto [s] from its last sync point up to
-  /// [nowMs], for resting phases only. Idempotent: it always advances the sync
-  /// point to [nowMs], so re-running it credits nothing new. A no-op (beyond
-  /// anchoring the clock) for running or paused phases.
+  /// Accrues long-break-rate recovery onto [s] from its last sync point up to
+  /// [nowMs], for resting phases only (idle, paused, focusComplete,
+  /// breakComplete). Idempotent: it always advances the sync point to [nowMs],
+  /// so re-running it credits nothing new. A no-op (beyond anchoring the clock)
+  /// for the running focus/break phases.
   static GameState _applyIdleRecovery(GameState s, int nowMs) {
     if (!_restsBetweenFocus(s.timer.phase)) return s;
     final since = s.staminaSyncedAtMs;
@@ -360,7 +395,7 @@ class Engine {
       return s.copyWith(staminaSyncedAtMs: nowMs);
     }
     final recovered =
-        (s.stamina + gm.idleRecovery(nowMs - since)).clamp(0.0, gm.kMaxStamina);
+        (s.stamina + gm.recovery(nowMs - since)).clamp(0.0, gm.kMaxStamina);
     return s.copyWith(stamina: recovered, staminaSyncedAtMs: nowMs);
   }
 
