@@ -4,15 +4,15 @@
          notification this app may ever send. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-    <!-- flutter_local_notifications declares these in its own manifest; strip
-         them at merge time. Wayfarer schedules inexactly (no exact-alarm
-         permission needed, and Google Play restricts exact alarms to
-         clock/calendar apps) and never vibrates. -->
+    <!-- The completion banner vibrates following the phone's ringer, so VIBRATE
+         is required. flutter_local_notifications also declares the exact-alarm
+         permissions in its own manifest; strip those — Wayfarer schedules
+         inexactly (no exact-alarm permission needed, and Google Play restricts
+         exact alarms to clock/calendar apps). -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"
         tools:node="remove"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
-        tools:node="remove"/>
-    <uses-permission android:name="android.permission.VIBRATE"
         tools:node="remove"/>
 
     <application
