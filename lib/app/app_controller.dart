@@ -30,6 +30,7 @@ class AppController extends ChangeNotifier {
       unawaited(_persistence.save(next));
     }
     _syncTicker();
+    unawaited(_refreshNotificationPermission());
   }
 
   final Persistence _persistence;
@@ -46,7 +47,12 @@ class AppController extends ChangeNotifier {
 
   Timer? _ticker;
   bool _foreground = true;
-  bool _permissionRequested = false;
+
+  /// Whether the OS currently lets the app post notifications. Refreshed at
+  /// launch, on resume, and after each permission request; drives the Settings
+  /// "blocked" hint.
+  bool _notificationsAuthorized = false;
+  bool get notificationsAuthorized => _notificationsAuthorized;
 
   int get nowMs => DateTime.now().millisecondsSinceEpoch;
 
@@ -58,6 +64,9 @@ class AppController extends ChangeNotifier {
   /// true state from wall-clock timestamps.
   void onAppResumed() {
     _foreground = true;
+    // The user may have flipped the OS permission while away (e.g. via the
+    // settings deep-link); re-read it so the hint stays accurate.
+    unawaited(_refreshNotificationPermission());
     final next = Engine.reconstruct(_state, nowMs);
     if (!identical(next, _state)) {
       // Completed while away — the notification announced it; no chime now.
@@ -177,15 +186,19 @@ class AppController extends ChangeNotifier {
     ));
   }
 
-  void setNotificationsEnabled(bool enabled) {
+  Future<void> setNotificationsEnabled(bool enabled) async {
     _apply(_state.copyWith(
         settings: _state.settings.copyWith(notificationsEnabled: enabled)));
     if (!enabled) {
       unawaited(_notifications.cancelPhaseEnd());
-    } else {
-      unawaited(_ensureNotificationPermission());
-      _schedulePhaseEndNotification(_state);
+      return;
     }
+    // Enabling is the natural moment to ask: the OS shows its permission dialog
+    // here. Schedule only once we actually hold the permission; if it's blocked
+    // the Settings hint guides the user to re-enable it.
+    _notificationsAuthorized = await _notifications.ensurePermission();
+    notifyListeners();
+    if (_notificationsAuthorized) _schedulePhaseEndNotification(_state);
   }
 
   Future<void> resetData() async {
@@ -318,10 +331,25 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _ensureNotificationPermission() async {
-    if (_permissionRequested || !_state.settings.notificationsEnabled) return;
-    _permissionRequested = true;
-    await _notifications.requestPermissionOnce();
+    if (!_state.settings.notificationsEnabled) return;
+    _notificationsAuthorized = await _notifications.ensurePermission();
+    notifyListeners();
   }
+
+  /// Re-reads the OS permission state (e.g. after the user toggles it in system
+  /// settings and returns) so the Settings hint reflects reality.
+  Future<void> _refreshNotificationPermission() async {
+    final authorized = await _notifications.areEnabled();
+    if (authorized != _notificationsAuthorized) {
+      _notificationsAuthorized = authorized;
+      notifyListeners();
+    }
+  }
+
+  /// Opens the app's system notification settings — the recovery path when the
+  /// permission has been denied and the OS will no longer show its dialog.
+  Future<void> openNotificationSettings() =>
+      _notifications.openSystemSettings();
 
   @override
   void dispose() {
