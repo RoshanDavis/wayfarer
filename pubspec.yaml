@@ -1,7 +1,7 @@
 name: wayfarer
 description: "A calm pomodoro focus timer fused with an idle travel game."
 publish_to: "none"
-version: 1.0.0+2
+version: 1.1.0+3
 
 environment:
   sdk: ^3.12.2
