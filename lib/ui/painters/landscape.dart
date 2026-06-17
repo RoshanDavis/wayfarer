@@ -271,9 +271,6 @@ class _ScenePainter extends CustomPainter {
       }
     }
 
-    // Sky-borne particles (high drift) sit behind the mountains.
-    _paintSkyParticles(canvas, size, geo);
-
     // Speed-lines: at extreme tiers the world itself conveys velocity.
     if (tierIndex >= 7 && state._velocity > 1 && animate) {
       final alpha = (0.05 + 0.006 * (tierIndex - 7)).clamp(0.05, 0.11);
@@ -305,9 +302,9 @@ class _ScenePainter extends CustomPainter {
       canvas.restore();
     }
 
-    // Air- and ground-borne particles (pollen, sand, petals, snow, embers,
-    // fireflies, mist…) sit in front of the mountains.
-    _paintAirParticles(canvas, size, geo);
+    // A subtle leftward wind drifts in front of the mountains — one uniform
+    // effect on every map (see [_paintWind]).
+    _paintWind(canvas, size, geo);
   }
 
   // -------------------------------------------------------------------------
@@ -322,91 +319,26 @@ class _ScenePainter extends CustomPainter {
     return r;
   }
 
-  void _paintSkyParticles(Canvas canvas, Size size, _Geometry geo) {
-    if (geo.particles.isEmpty) return;
-    final clk = state._scrollPx;
-    switch (map.particle) {
-      case MapParticle.drift:
-        final w = size.width;
-        final paint = Paint()..color = palette.ink.withValues(alpha: 0.12);
-        for (final p in geo.particles) {
-          final x = _wrap(p.x - clk * 0.06, w);
-          final bob = math.sin(clk * 0.01 + p.phase) * size.height * 0.006;
-          canvas.drawCircle(Offset(x, p.y + bob), p.size * 0.9, paint);
-        }
-      default:
-        break;
-    }
-  }
-
-  void _paintAirParticles(Canvas canvas, Size size, _Geometry geo) {
+  /// One subtle wind for every map: each ambient particle is a faint leftward
+  /// streak (the traveller moves right, so the air streams left), reinforcing
+  /// forward motion without drawing the eye. Tonal ink, so it reads in both
+  /// themes; only drifts while the scene moves (focus), holding still at rest.
+  /// The per-map [MapParticle] kind is retained as data but no longer alters
+  /// the look — the night-sky stars remain a separate, untouched backdrop.
+  void _paintWind(Canvas canvas, Size size, _Geometry geo) {
     if (geo.particles.isEmpty) return;
     final w = size.width;
     final h = size.height;
     final clk = state._scrollPx;
-    final ink = palette.ink;
-    final inkSoft = palette.inkSoft;
-    const tau = 2 * math.pi;
-
-    switch (map.particle) {
-      case MapParticle.embers:
-        final paint = Paint()..color = inkSoft.withValues(alpha: 0.4);
-        final span = h * 0.25;
-        for (final p in geo.particles) {
-          final up = (clk * 0.05 + p.phase / tau * span) % span;
-          final x = _wrap(p.x + math.sin(clk * 0.02 + p.phase) * 5, w);
-          canvas.drawCircle(Offset(x, p.y - up), p.size * 0.85, paint);
-        }
-      case MapParticle.pollen:
-        // Drifts sideways with a tiny bob, holding its (spread-out) height
-        // rather than rising — so it stays scattered across the pane.
-        final paint = Paint()..color = ink.withValues(alpha: 0.16);
-        for (final p in geo.particles) {
-          final x = _wrap(p.x - clk * 0.04 + math.sin(clk * 0.015 + p.phase) * 8, w);
-          final bob = math.sin(clk * 0.02 + p.phase) * h * 0.006;
-          canvas.drawCircle(Offset(x, p.y + bob), p.size * 0.8, paint);
-        }
-      case MapParticle.dust:
-        final paint = Paint()..color = inkSoft.withValues(alpha: 0.2);
-        for (final p in geo.particles) {
-          final x = _wrap(p.x - clk * 0.14, w);
-          final bob = math.sin(clk * 0.02 + p.phase) * h * 0.004;
-          canvas.drawCircle(Offset(x, p.y + bob), p.size * 0.8, paint);
-        }
-      case MapParticle.sand:
-        final paint = Paint()
-          ..color = inkSoft.withValues(alpha: 0.16)
-          ..strokeWidth = 1.0
-          ..strokeCap = StrokeCap.round;
-        for (final p in geo.particles) {
-          final x = _wrap(p.x - clk * 0.5, w);
-          final len = w * (0.02 + p.size * 0.015);
-          canvas.drawLine(Offset(x, p.y), Offset(x + len, p.y), paint);
-        }
-      case MapParticle.spray:
-        final paint = Paint()..color = ink.withValues(alpha: 0.18);
-        final span = h * 0.06;
-        for (final p in geo.particles) {
-          final up = (clk * 0.04 + p.phase / tau * span) % span;
-          final x = _wrap(p.x - clk * 0.2, w);
-          canvas.drawCircle(Offset(x, p.y - up), p.size * 0.7, paint);
-        }
-      case MapParticle.mist:
-        break;
-      case MapParticle.fireflies:
-        for (final p in geo.particles) {
-          final blink = math.sin(clk * 0.03 + p.phase) * 0.5 + 0.5;
-          final a = blink * blink * 0.6; // sharp on/off pulse
-          if (a < 0.02) continue;
-          final x = _wrap(p.x + math.sin(clk * 0.01 + p.phase) * 10, w);
-          final y = p.y + math.sin(clk * 0.012 + p.phase * 1.7) * h * 0.01;
-          canvas.drawCircle(
-              Offset(x, y), p.size * 1.7, Paint()..color = ink.withValues(alpha: a * 0.22));
-          canvas.drawCircle(
-              Offset(x, y), p.size * 0.7, Paint()..color = ink.withValues(alpha: a));
-        }
-      default:
-        break;
+    final paint = Paint()
+      ..color = palette.ink.withValues(alpha: 0.09)
+      ..strokeWidth = 0.8
+      ..strokeCap = StrokeCap.round;
+    for (final p in geo.particles) {
+      final x = _wrap(p.x - clk * 4.5, w);
+      final y = p.y + math.sin(clk * 0.01 + p.phase) * h * 0.003;
+      final len = w * (0.05 + p.size * 0.03);
+      canvas.drawLine(Offset(x, y), Offset(x + len, y), paint);
     }
   }
 
@@ -488,7 +420,7 @@ class _ScenePainter extends CustomPainter {
     }
 
 
-    final particles = _buildParticles(map.particle, rng, w, h);
+    final particles = _buildParticles(rng, w, h);
 
     // The night-sky starfield (drawn only in dark mode): a stationary scatter
     // of pale dots across the upper sky. Generated always, cheap, drawn never
@@ -517,53 +449,14 @@ class _ScenePainter extends CustomPainter {
         bgStars, speedLines);
   }
 
-  /// Spawns the ambient particles for [kind] within a band suited to it
-  /// (counts kept low — these are a whisper, not weather).
-  List<_Particle> _buildParticles(
-      MapParticle kind, math.Random rng, double w, double h) {
-    int count;
-    double yLo;
-    double yHi;
-    switch (kind) {
-      case MapParticle.none:
-        return const [];
-      // The horizontally-drifting ambients fill the whole front pane — from
-      // just below the timer down to just above the foremost ground — scattered
-      // evenly across both sky and land.
-      case MapParticle.drift:
-        count = 22;
-        yLo = 0.18;
-        yHi = 0.64;
-      case MapParticle.pollen:
-        count = 26;
-        yLo = 0.18;
-        yHi = 0.66;
-      case MapParticle.dust:
-        count = 26;
-        yLo = 0.18;
-        yHi = 0.66;
-      case MapParticle.sand:
-        count = 24;
-        yLo = 0.22;
-        yHi = 0.66;
-      case MapParticle.mist:
-        count = 7;
-        yLo = 0.18;
-        yHi = 0.60;
-      // These belong to a place (the sea, the dusk ground) and keep their home.
-      case MapParticle.spray:
-        count = 18;
-        yLo = 0.58;
-        yHi = 0.70;
-      case MapParticle.fireflies:
-        count = 16;
-        yLo = 0.55;
-        yHi = 0.82;
-      case MapParticle.embers:
-        count = 14;
-        yLo = 0.50;
-        yHi = 0.74;
-    }
+  /// Spawns the ambient wind field — one uniform set for every map (the
+  /// per-map [MapParticle] kind is retained as data but no longer alters it).
+  /// Count kept low — a whisper, not weather — scattered across the front pane,
+  /// from just below the timer to just above the foremost ground.
+  List<_Particle> _buildParticles(math.Random rng, double w, double h) {
+    const count = 20;
+    const yLo = 0.18;
+    const yHi = 0.66;
     // Scatter on a jittered low-discrepancy grid: stratify x by index, and step
     // y by the golden ratio (mod 1) so heights spread evenly across the band in
     // any count — never bunched into a column or a horizontal strip.

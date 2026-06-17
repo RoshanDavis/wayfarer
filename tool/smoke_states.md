@@ -16,10 +16,12 @@ Placeholders: `{NOW}` = current epoch ms; arithmetic offsets in ms.
    phaseEndsAtMs={NOW}+240000, staminaAtBreakStart=75, stamina=75.
    Expect resting runner on rock, softened palette, countdown.
 
-4. Map/theme spot checks (idle states): setsCompleted=3 (Golden Plains),
-   9 (Pine Ridge), 15 (Canyon), 33 (Fjords), 51 (Volcanic Fields),
-   63 (Night Desert), 69 (The Stratosphere); level 65 for glide gait;
-   settings.theme=dark for dark-ramp variants.
+4. Map/theme spot checks (idle states): the map now advances every level
+   (mapIndexForLevel = (level-1) % 25), so set `-Level` to pick a map:
+   2 (Golden Plains), 4 (Pine Ridge), 6 (Canyon), 12 (Fjords),
+   18 (Volcanic Fields), 22 (Night Desert), 24 (The Stratosphere),
+   25 (Maple Wood); settings.theme=dark for dark-ramp variants. Note: level
+   now drives both the map and the gait.
 
 5. Notification: phase=focusRunning ending {NOW}+75000,
    notificationsEnabled=true; pm grant POST_NOTIFICATIONS; press HOME;

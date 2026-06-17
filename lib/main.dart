@@ -104,7 +104,7 @@ class _WayfarerAppState extends State<WayfarerApp>
               map: accentForSession(s.sessionsCompleted,
                   seed: controller.accentSeed),
               brightness: brightness,
-              cycle: mapCycleForSets(s.setsCompleted),
+              cycle: mapCycleForLevel(s.level),
               soften: softened ? 1 : 0,
             );
 

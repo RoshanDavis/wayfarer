@@ -123,23 +123,83 @@ void main() {
   group('focus XP', () {
     test('a full default 25-minute session earns 10 XP', () {
       expect(
-          xpForFocus(elapsedFocusMs: kFocusMs, staminaAtSessionStart: 100), 10);
+          xpForFocus(
+              elapsedFocusMs: kFocusMs, staminaAtSessionStart: 100, level: 1),
+          10);
     });
 
     test('XP scales with the minutes actually spent', () {
       expect(
           xpForFocus(
-              elapsedFocusMs: 20 * 60 * 1000, staminaAtSessionStart: 100),
+              elapsedFocusMs: 20 * 60 * 1000,
+              staminaAtSessionStart: 100,
+              level: 1),
           8);
       expect(
           xpForFocus(
-              elapsedFocusMs: 50 * 60 * 1000, staminaAtSessionStart: 100),
+              elapsedFocusMs: 50 * 60 * 1000,
+              staminaAtSessionStart: 100,
+              level: 1),
           20);
-      expect(xpForFocus(elapsedFocusMs: 0, staminaAtSessionStart: 100), 0);
+      expect(
+          xpForFocus(elapsedFocusMs: 0, staminaAtSessionStart: 100, level: 1),
+          0);
     });
 
-    test('XP per time is halved at 0% stamina', () {
-      expect(xpForFocus(elapsedFocusMs: kFocusMs, staminaAtSessionStart: 0), 5);
+    test('XP per time is halved when the session starts at 0% stamina', () {
+      expect(
+          xpForFocus(
+              elapsedFocusMs: kFocusMs, staminaAtSessionStart: 0, level: 1),
+          5);
+    });
+
+    test('the debuff engages mid-session: a full 25-min from 30% earns 8 XP',
+        () {
+      // Stamina hits 0 fifteen minutes in (drains 50% over 25 min); 15 min at
+      // full + 10 min at half = 20 effective minutes → 8 XP.
+      expect(
+          xpForFocus(
+              elapsedFocusMs: kFocusMs, staminaAtSessionStart: 30, level: 1),
+          8);
+    });
+  });
+
+  group('effective focus time (mid-session stamina debuff)', () {
+    test('full while stamina > 0, halved the instant it hits 0', () {
+      // Level 1, 30% bar empties 15 min into a 25-min session → 20 eff. minutes.
+      expect(
+          effectiveFocusMs(
+              level: 1, staminaAtStart: 30, elapsedFocusMs: kFocusMs),
+          closeTo(20 * 60 * 1000, 1e-6));
+      // Never reaches 0 → the whole chunk counts at full rate.
+      expect(
+          effectiveFocusMs(
+              level: 1, staminaAtStart: 100, elapsedFocusMs: kFocusMs),
+          closeTo(kFocusMs.toDouble(), 1e-6));
+      // Starts empty → the entire chunk runs at the floor.
+      expect(
+          effectiveFocusMs(
+              level: 1, staminaAtStart: 0, elapsedFocusMs: kFocusMs),
+          closeTo(kFocusMs * kSpeedFloor, 1e-6));
+    });
+  });
+
+  group('consistency multiplier', () {
+    test('no history is a flat 1.0x; each active day adds 5%', () {
+      expect(consistencyMultiplier(0), 1.0);
+      expect(consistencyMultiplier(1), closeTo(1.05, 1e-9));
+      expect(consistencyMultiplier(10), closeTo(1.50, 1e-9));
+    });
+
+    test('caps at the full 14-day window (+70%)', () {
+      expect(consistencyMultiplier(14), closeTo(1.70, 1e-9));
+      expect(consistencyMultiplier(20), closeTo(1.70, 1e-9)); // clamped
+    });
+
+    test('bonus fraction is the multiplier minus one', () {
+      expect(consistencyBonusFraction(0), 0.0);
+      expect(consistencyBonusFraction(10), closeTo(0.5, 1e-9));
+      expect(consistencyBonusFraction(99), closeTo(0.70, 1e-9));
     });
   });
 
@@ -153,13 +213,23 @@ void main() {
           closeTo(25 / 60, 1e-9));
     });
 
-    test('modifier from stamina at session start scales distance', () {
+    test('at 0% stamina distance runs at the half-rate floor', () {
       expect(
           distanceKm(
               levelAtSessionStart: 1,
               staminaAtSessionStart: 0,
               elapsedFocusMs: kFocusMs),
           closeTo(0.5 * 25 / 60, 1e-9));
+    });
+
+    test('distance halves only after stamina empties mid-session', () {
+      // Level 1, start 30%: empties 15 min in, so 20 effective minutes.
+      expect(
+          distanceKm(
+              levelAtSessionStart: 1,
+              staminaAtSessionStart: 30,
+              elapsedFocusMs: kFocusMs),
+          closeTo(20 / 60, 1e-9));
     });
 
     test('proportional to elapsed time', () {

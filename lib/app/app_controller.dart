@@ -21,6 +21,9 @@ class AppController extends ChangeNotifier {
     required this._notifications,
     required this._chime,
   }) {
+    // Read before the reconstruct below writes a snapshot — distinguishes a
+    // genuine first run from a returning user.
+    final firstRun = !_persistence.hasSave;
     _state = _persistence.load();
     // Reconstruct at launch: phases that completed while the app was dead
     // resolve now (the scheduled notification already announced them).
@@ -30,7 +33,7 @@ class AppController extends ChangeNotifier {
       unawaited(_persistence.save(next));
     }
     _syncTicker();
-    unawaited(_refreshNotificationPermission());
+    unawaited(_initNotifications(firstRun: firstRun));
   }
 
   final Persistence _persistence;
@@ -333,6 +336,26 @@ class AppController extends ChangeNotifier {
   Future<void> _ensureNotificationPermission() async {
     if (!_state.settings.notificationsEnabled) return;
     _notificationsAuthorized = await _notifications.ensurePermission();
+    notifyListeners();
+  }
+
+  /// Notification setup at launch. On a genuine first run, ask for the
+  /// POST_NOTIFICATIONS permission up front (so the completion alert can fire
+  /// from the first session); if the user declines, switch the completion alert
+  /// off so the toggle reflects reality — it can be turned back on later, which
+  /// routes to system settings. On later runs, just re-read the live state.
+  Future<void> _initNotifications({required bool firstRun}) async {
+    if (!firstRun) {
+      await _refreshNotificationPermission();
+      return;
+    }
+    final granted = await _notifications.ensurePermission();
+    _notificationsAuthorized = granted;
+    if (!granted && _state.settings.notificationsEnabled) {
+      _state = _state.copyWith(
+          settings: _state.settings.copyWith(notificationsEnabled: false));
+      unawaited(_persistence.save(_state));
+    }
     notifyListeners();
   }
 

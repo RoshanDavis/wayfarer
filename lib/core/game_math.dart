@@ -28,14 +28,13 @@ const int kXpLinearSlope = 5;
 
 // ---------------------------------------------------------------------------
 // Pomodoro structure — durations are the user-tunable defaults; a set is
-// always 4 sessions and the map advances every 3 sets.
+// always 4 sessions. The map advances every level (see maps.dart).
 // ---------------------------------------------------------------------------
 
 const int kFocusMinutes = 25;
 const int kShortBreakMinutes = 5;
 const int kLongBreakMinutes = 15;
 const int kSessionsPerSet = 4;
-const int kSetsPerMap = 3;
 
 const int kFocusMs = kFocusMinutes * 60 * 1000;
 const int kShortBreakMs = kShortBreakMinutes * 60 * 1000;
@@ -67,8 +66,26 @@ int clampMinutes(int minutes, int lo, int hi) =>
 /// rewarded for the minutes worked.
 const double kXpPerFocusMinute = 0.4;
 
-/// Bonus XP for completing a full set (4 sessions). Not time- or stamina-scaled.
-const int kXpSetBonus = 10;
+/// Bonus XP for completing a full set (4 sessions). Scaled by the consistency
+/// multiplier in the engine, but not by time or stamina.
+const int kXpSetBonus = 7;
+
+/// XP awarded per marker (badge) earned this session — tier, map, comparison,
+/// or odometer. Like the set bonus, scaled only by the consistency multiplier.
+const int kXpPerMarker = 7;
+
+/// Trailing-window consistency multiplier knobs. Each distinct day with focus
+/// in the last [kConsistencyWindowDays] adds [kConsistencyBonusPerDay] to the
+/// XP-gain multiplier, capped at [kConsistencyMaxBonus]. Rewards showing up
+/// regularly without punishing the odd missed day.
+const double kConsistencyBonusPerDay = 0.05;
+const int kConsistencyWindowDays = 14;
+const double kConsistencyMaxBonus = 0.70; // == kConsistencyWindowDays * perDay
+
+/// Safety cap on the marker-XP fixpoint passes in the engine: marker XP can
+/// fund another level, which can cross another marker. Converges in 1–2 passes
+/// in practice; the cap only guards against a pathological loop.
+const int kMaxMarkerPasses = 8;
 
 // ---------------------------------------------------------------------------
 // Stamina
@@ -138,15 +155,36 @@ LevelProgress applyXp(
   return LevelProgress(l, xp, l - level);
 }
 
-/// Base XP earned for [elapsedFocusMs] of focus, scaled by the stamina modifier
-/// (halved at 0% stamina, the same rule as speed). The set-completion bonus is
-/// added separately by the engine, so a full default 25-minute session yields
-/// 10 XP and a 20-minute early end yields 8.
-int xpForFocus(
-        {required int elapsedFocusMs, required double staminaAtSessionStart}) =>
+/// Fraction added to the XP-gain multiplier for [activeDays] distinct active
+/// days in the trailing window: +[kConsistencyBonusPerDay] per day, capped at
+/// [kConsistencyMaxBonus]. 0 when there is no recent history.
+double consistencyBonusFraction(int activeDays) =>
+    (kConsistencyBonusPerDay * activeDays).clamp(0.0, kConsistencyMaxBonus);
+
+/// XP-gain multiplier from recent consistency: 1 + [consistencyBonusFraction].
+double consistencyMultiplier(int activeDays) =>
+    1.0 + consistencyBonusFraction(activeDays);
+
+/// Base XP earned for [elapsedFocusMs] of focus. Uses [effectiveFocusMs] so the
+/// half-rate debuff engages the instant stamina hits 0 mid-session (full rate
+/// before the zero-crossing, halved after). The set-completion bonus and the
+/// consistency multiplier are applied separately by the engine, so a full
+/// default 25-minute session from full stamina yields 10 XP and a 20-minute
+/// early end yields 8.
+int xpForFocus({
+  required int elapsedFocusMs,
+  required double staminaAtSessionStart,
+  required int level,
+  int focusDurationMs = kFocusMs,
+}) =>
     (kXpPerFocusMinute *
-            (elapsedFocusMs / 60000) *
-            staminaSpeedModifier(staminaAtSessionStart))
+            (effectiveFocusMs(
+                  level: level,
+                  staminaAtStart: staminaAtSessionStart,
+                  elapsedFocusMs: elapsedFocusMs,
+                  focusDurationMs: focusDurationMs,
+                ) /
+                60000))
         .round();
 
 // ---------------------------------------------------------------------------
@@ -177,6 +215,25 @@ double drainFor({
 double staminaSpeedModifier(double stamina) =>
     stamina <= 0 ? kSpeedFloor : 1.0;
 
+/// Effective full-rate focus milliseconds for a chunk of [elapsedFocusMs],
+/// accounting for the half-rate stamina debuff. Stamina falls linearly from
+/// [staminaAtStart] as focus accrues; milliseconds before the zero-crossing
+/// count at full rate, milliseconds after it at [kSpeedFloor]. Within a focus
+/// session stamina only drains, so there is at most one crossing — the debuff
+/// engages the instant stamina hits 0 and lifts the instant it rises above 0.
+double effectiveFocusMs({
+  required int level,
+  required double staminaAtStart,
+  required int elapsedFocusMs,
+  int focusDurationMs = kFocusMs,
+}) {
+  if (staminaAtStart <= 0) return elapsedFocusMs * kSpeedFloor;
+  final drainPerMs = fullSessionDrain(level) / focusDurationMs;
+  final msToZero = staminaAtStart / drainPerMs;
+  if (msToZero >= elapsedFocusMs) return elapsedFocusMs.toDouble();
+  return msToZero + (elapsedFocusMs - msToZero) * kSpeedFloor;
+}
+
 /// Stamina recovered over [elapsedMs] of any non-focus time — idle, paused, or a
 /// short/long break — all at the same rate: a fully drained bar refills over
 /// [kStaminaRecoveryMinutes]. The caller decides which phases count and clamps
@@ -190,14 +247,22 @@ double recovery(int elapsedMs) =>
 
 /// Distance in km for [elapsedFocusMs] of travel.
 ///
-/// Pace comes from the level at session start; the stamina modifier is
-/// evaluated from stamina at session start and held constant for the session.
-/// Computed only at pause or session end — never on a live tick.
+/// Pace is fixed by the level at session start. The stamina modifier is dynamic
+/// within the chunk: full while stamina is above 0, halved the instant it hits
+/// 0 (see [effectiveFocusMs]). [staminaAtSessionStart] is the stamina at the
+/// start of this chunk. Computed only at pause or session end — never on a live
+/// tick.
 double distanceKm({
   required int levelAtSessionStart,
   required double staminaAtSessionStart,
   required int elapsedFocusMs,
+  int focusDurationMs = kFocusMs,
 }) =>
     paceKmh(levelAtSessionStart) *
-    staminaSpeedModifier(staminaAtSessionStart) *
-    (elapsedFocusMs / (1000 * 60 * 60));
+    (effectiveFocusMs(
+          level: levelAtSessionStart,
+          staminaAtStart: staminaAtSessionStart,
+          elapsedFocusMs: elapsedFocusMs,
+          focusDurationMs: focusDurationMs,
+        ) /
+        (1000 * 60 * 60));

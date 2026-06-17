@@ -39,36 +39,35 @@ void main() {
   });
 
   group('maps', () {
-    test('there are 24 maps with the spec names in order', () {
-      expect(kMaps.length, 24);
+    test('there are 25 maps with the spec names in order', () {
+      expect(kMaps.length, 25);
       expect(kMaps.first.name, 'The Garden');
       expect(kMaps[2].name, 'Dune Sea');
       expect(kMaps[23].name, 'The Stratosphere');
+      expect(kMaps[24].name, 'Maple Wood');
     });
 
-    test('map advances exactly every 3 completed sets', () {
-      expect(mapIndexForSets(0), 0);
-      expect(mapIndexForSets(1), 0);
-      expect(mapIndexForSets(2), 0);
-      expect(mapIndexForSets(3), 1);
-      expect(mapIndexForSets(5), 1);
-      expect(mapIndexForSets(6), 2);
-      expect(mapIndexForSets(35), 11);
+    test('the map advances every level and loops past the end', () {
+      expect(mapIndexForLevel(1), 0);
+      expect(mapIndexForLevel(2), 1);
+      expect(mapIndexForLevel(25), 24);
+      expect(mapIndexForLevel(26), 0); // wraps to the first map
+      expect(mapIndexForLevel(27), 1);
+      expect(mapForLevel(26).name, 'The Garden');
     });
 
-    test('mapChangedAtSet flags only multiples of 3', () {
-      expect(mapChangedAtSet(0), isFalse);
-      expect(mapChangedAtSet(1), isFalse);
-      expect(mapChangedAtSet(3), isTrue);
-      expect(mapChangedAtSet(4), isFalse);
-      expect(mapChangedAtSet(6), isTrue);
+    test('consecutive levels always land on a different map', () {
+      for (var l = 1; l <= 200; l++) {
+        expect(mapIndexForLevel(l), isNot(mapIndexForLevel(l + 1)));
+      }
     });
 
-    test('cycle loops past 24 maps with a rising cycle counter', () {
-      expect(mapIndexForSets(72), 0); // 72 sets = 24 maps later, wrapped
-      expect(mapCycleForSets(71), 0);
-      expect(mapCycleForSets(72), 1);
-      expect(mapForSets(75).name, 'Golden Plains');
+    test('cycle counter rises once per full loop of the maps', () {
+      expect(mapCycleForLevel(1), 0);
+      expect(mapCycleForLevel(25), 0);
+      expect(mapCycleForLevel(26), 1);
+      expect(mapCycleForLevel(50), 1);
+      expect(mapCycleForLevel(51), 2);
     });
   });
 

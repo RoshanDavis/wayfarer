@@ -19,7 +19,7 @@ import '../../core/comparisons.dart' as cmp;
 import '../../core/game_math.dart' as gm;
 import '../../core/maps.dart';
 import '../../core/models.dart';
-import '../../core/session_engine.dart' show dateKey;
+import '../../core/session_engine.dart' show dateKey, activeDaysInWindow;
 import '../../core/tiers.dart';
 import '../app_scope.dart';
 import '../format.dart';
@@ -116,8 +116,8 @@ class _HomeScreenState extends State<HomeScreen> {
               return Transform.translate(offset: Offset(0, dy), child: child);
             },
             child: LandscapeView(
-              mapIndex: mapIndexForSets(s.setsCompleted),
-              cycle: mapCycleForSets(s.setsCompleted),
+              mapIndex: mapIndexForLevel(s.level),
+              cycle: mapCycleForLevel(s.level),
               paceKmh: s.paceKmh,
               tierIndex: tier.index,
               motion: phase == Phase.focusRunning
@@ -743,6 +743,22 @@ class _StatsSection extends StatelessWidget {
         Text('LAST 14 DAYS', style: Type.label(p, size: 10)),
         const SizedBox(height: 18),
         _History(dailyMinutes: state.dailyFocusMinutes),
+        Builder(builder: (context) {
+          // +5% XP gain per active day in the window — shown only when earned,
+          // so an empty chart stays quiet. Same window the chart draws.
+          final pct = (gm.consistencyBonusFraction(activeDaysInWindow(
+                      state.dailyFocusMinutes,
+                      DateTime.now().millisecondsSinceEpoch)) *
+                  100)
+              .round();
+          if (pct <= 0) return const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text('+$pct% EXP GAIN',
+                style: Type.label(p,
+                    size: 10, color: p.inkSoft.withValues(alpha: 0.9))),
+          );
+        }),
       ],
     );
   }
