@@ -301,46 +301,9 @@ class _ScenePainter extends CustomPainter {
       canvas.drawPath(geo.layerPaths[i], Paint()..color = layerColors[i]);
       canvas.restore();
     }
-
-    // A subtle leftward wind drifts in front of the mountains — one uniform
-    // effect on every map (see [_paintWind]).
-    _paintWind(canvas, size, geo);
   }
 
-  // -------------------------------------------------------------------------
-  // Ambient particles — every map carries a subtle effect. All particles are
-  // tonal steps of the accent ink (so they read in both themes) and only move
-  // while the scene drifts (focus); at rest they hold their last position.
-  // -------------------------------------------------------------------------
 
-  static double _wrap(double v, double span) {
-    var r = v % span;
-    if (r < 0) r += span;
-    return r;
-  }
-
-  /// One subtle wind for every map: each ambient particle is a faint leftward
-  /// streak (the traveller moves right, so the air streams left), reinforcing
-  /// forward motion without drawing the eye. Tonal ink, so it reads in both
-  /// themes; only drifts while the scene moves (focus), holding still at rest.
-  /// The per-map [MapParticle] kind is retained as data but no longer alters
-  /// the look — the night-sky stars remain a separate, untouched backdrop.
-  void _paintWind(Canvas canvas, Size size, _Geometry geo) {
-    if (geo.particles.isEmpty) return;
-    final w = size.width;
-    final h = size.height;
-    final clk = state._scrollPx;
-    final paint = Paint()
-      ..color = palette.ink.withValues(alpha: 0.09)
-      ..strokeWidth = 0.8
-      ..strokeCap = StrokeCap.round;
-    for (final p in geo.particles) {
-      final x = _wrap(p.x - clk * 4.5, w);
-      final y = p.y + math.sin(clk * 0.01 + p.phase) * h * 0.003;
-      final len = w * (0.05 + p.size * 0.03);
-      canvas.drawLine(Offset(x, y), Offset(x + len, y), paint);
-    }
-  }
 
   // -------------------------------------------------------------------------
   // Geometry generation
@@ -449,30 +412,9 @@ class _ScenePainter extends CustomPainter {
         bgStars, speedLines);
   }
 
-  /// Spawns the ambient wind field — one uniform set for every map (the
-  /// per-map [MapParticle] kind is retained as data but no longer alters it).
-  /// Count kept low — a whisper, not weather — scattered across the front pane,
-  /// from just below the timer to just above the foremost ground.
+  /// Spawns the ambient wind field — currently disabled/empty.
   List<_Particle> _buildParticles(math.Random rng, double w, double h) {
-    const count = 20;
-    const yLo = 0.18;
-    const yHi = 0.66;
-    // Scatter on a jittered low-discrepancy grid: stratify x by index, and step
-    // y by the golden ratio (mod 1) so heights spread evenly across the band in
-    // any count — never bunched into a column or a horizontal strip.
-    const golden = 0.61803398875;
-    return [
-      for (var i = 0; i < count; i++)
-        _Particle(
-          (i + 0.15 + rng.nextDouble() * 0.7) / count * w,
-          h *
-              (yLo +
-                  ((i * golden + rng.nextDouble() * 0.06) % 1.0) *
-                      (yHi - yLo)),
-          0.8 + rng.nextDouble() * 0.9,
-          rng.nextDouble() * 2 * math.pi,
-        ),
-    ];
+    return const <_Particle>[];
   }
 
   /// Builds a closed silhouette path spanning 2× width (for seamless
