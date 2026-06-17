@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wayfarer/core/game_math.dart' as gm;
+import 'package:wayfarer/core/maps.dart';
 import 'package:wayfarer/core/models.dart';
 import 'package:wayfarer/core/session_engine.dart';
 
@@ -28,7 +29,7 @@ void main() {
       final s = completeOneSession(GameState.initial, t0);
       expect(s.timer.phase, Phase.focusComplete);
       expect(s.lifetimeKm, closeTo(25 / 60, 1e-9));
-      expect(s.xpIntoLevel, 10);
+      expect(s.xpIntoLevel, 11); // 10 time XP × 1.05 (today is 1 active day)
       expect(s.level, 1);
       expect(s.stamina, closeTo(50, 1e-9)); // one session drains half the bar
       expect(s.sessionsCompleted, 1);
@@ -38,7 +39,7 @@ void main() {
       final reveal = s.pendingReveal!;
       expect(reveal.sessionCompleted, isTrue);
       expect(reveal.distanceKm, closeTo(25 / 60, 1e-9));
-      expect(reveal.xpGained, 10);
+      expect(reveal.xpGained, 11);
       expect(reveal.nextAction, NextAction.shortBreak);
       expect(s.dailyFocusMinutes[dateKey(t0 + 25 * minMs)], 25);
     });
@@ -49,13 +50,15 @@ void main() {
       expect(s.lifetimeKm, closeTo(gm.paceKmh(3) * 25 / 60, 1e-9));
     });
 
-    test('the speed modifier is locked at session start (full while > 0%)', () {
-      // Starts at 30% and drains to 0 mid-session, but travels at full speed the
-      // whole way because the modifier is fixed at session start (> 0%).
+    test('the stamina debuff engages the instant the bar empties mid-session',
+        () {
+      // Starts at 30%; the bar empties 15 min into the 25-min session, so the
+      // runner is at full speed for those 15 min and the half-rate floor for the
+      // final 10 → 20 effective minutes of travel.
       final tired = GameState.initial.copyWith(stamina: 30);
       final s = completeOneSession(tired, t0);
       expect(s.stamina, 0); // 30 − 50% drain, clamped at zero
-      expect(s.lifetimeKm, closeTo(25 / 60, 1e-9)); // full speed: started > 0
+      expect(s.lifetimeKm, closeTo(20 / 60, 1e-9));
     });
 
     test('the 50% floor still moves the runner when started at 0% stamina', () {
@@ -90,6 +93,8 @@ void main() {
       // The 3-hour pause fully recovered the bar; the final 15-min segment then
       // drains 30% (15 of 25 min × 50%).
       expect(s.stamina, closeTo(70, 1e-9));
+      expect(s.xpIntoLevel, 11);
+      expect(s.pendingReveal?.xpGained, 11);
     });
 
     test('pausing while paused or idle is a no-op', () {
@@ -108,7 +113,7 @@ void main() {
       expect(s.timer.phase, Phase.focusComplete);
       expect(s.timer.breakKind, BreakKind.short);
       expect(s.lifetimeKm, closeTo(0.4 * 25 / 60, 1e-9));
-      expect(s.xpIntoLevel, 4); // 0.4 XP/min × 10 min worked
+      expect(s.xpIntoLevel, 4); // 0.4 XP/min × 10 min = 4; ×1.05 rounds back to 4
       expect(s.sessionsCompleted, 0); // not a completed session
       expect(s.sessionIndexInSet, 0); // the set does not advance
       expect(s.stamina, closeTo(80, 1e-9)); // 10 of 25 min drains 20%
@@ -156,10 +161,12 @@ void main() {
       expect(s.sessionsCompleted, 4);
       expect(s.timer.breakKind, BreakKind.long);
       expect(s.pendingReveal!.nextAction, NextAction.longBreak);
-      expect(s.pendingReveal!.xpGained, 20); // 10 + 10 set bonus
-      // 10+10+10+20 = 50 XP: 16 to level 2, 17 to level 3, 17 remaining.
-      expect(s.level, 3);
-      expect(s.xpIntoLevel, 17);
+      // 4th session: (10 time + 7 set) × 1.05 = 18 base, plus a map and the
+      // 1-mile odometer marker (2 × 7 × 1.05 = 15) → 33; that marker XP carries
+      // the climb from level 4 into level 5.
+      expect(s.pendingReveal!.xpGained, 33);
+      expect(s.level, 5);
+      expect(s.xpIntoLevel, 8);
     });
 
     test('early-ended sessions do not advance the set', () {
@@ -347,21 +354,22 @@ void main() {
       expect(s.badgeIds.where((b) => b.startsWith('cmp-')).length, 1);
     });
 
-    test('map changes exactly every 3 completed sets with a map badge', () {
+    test('the map advances on every level-up (and only then)', () {
       var s = GameState.initial;
       var clock = t0;
+      var lastLevel = s.level;
       for (var session = 1; session <= 12; session++) {
         s = completeOneSession(s, clock);
         clock += 60 * minMs;
         final reveal = s.pendingReveal!;
-        if (session == 12) {
-          expect(s.setsCompleted, 3);
-          expect(reveal.newMapIndex, 1);
-          expect(s.badgeIds, contains('map-1'));
+        if (s.level > lastLevel) {
+          expect(reveal.newMapIndex, mapIndexForLevel(s.level),
+              reason: 'a level-up at session $session must change the map');
         } else {
           expect(reveal.newMapIndex, isNull,
-              reason: 'map must not change at session $session');
+              reason: 'no level-up at session $session, so no map change');
         }
+        lastLevel = s.level;
         s = Engine.skipBreak(s);
       }
     });
@@ -373,6 +381,52 @@ void main() {
       expect(s.lifetimeKm, greaterThan(5));
       expect(s.badgeIds, contains('odo-5'));
       expect(s.pendingReveal!.badgeIds, contains('odo-5'));
+    });
+  });
+
+  group('consistency and marker XP', () {
+    test('the consistency multiplier scales the whole XP gain', () {
+      // Five prior active days in-window + today = 6 active days → ×1.30.
+      final daily = <String, int>{
+        for (var i = 1; i <= 5; i++) dateKey(t0 - i * 24 * 60 * minMs): 25,
+      };
+      final s0 = GameState.initial.copyWith(dailyFocusMinutes: daily);
+      final s = completeOneSession(s0, t0);
+      // base = round(10 × 1.30) = 13; no level-up, no markers.
+      expect(s.pendingReveal!.xpGained, 13);
+      expect(s.xpIntoLevel, 13);
+    });
+
+    test('active days outside the 14-day window do not count', () {
+      // Activity 20–24 days ago is out of window, so today alone gives ×1.05.
+      final daily = <String, int>{
+        for (var i = 20; i <= 24; i++) dateKey(t0 - i * 24 * 60 * minMs): 25,
+      };
+      final s0 = GameState.initial.copyWith(dailyFocusMinutes: daily);
+      final s = completeOneSession(s0, t0);
+      expect(s.pendingReveal!.xpGained, 11); // 10 × 1.05 (today only)
+    });
+
+    test('earning a marker awards +7 XP (×consistency) on top of base XP', () {
+      // One XP shy of level 3; completing crosses into a new map (the only
+      // marker). base 11 (10 ×1.05) + marker 7 (7 ×1.05, rounded) = 18.
+      final s0 = GameState.initial
+          .copyWith(level: 2, xpIntoLevel: gm.xpToNext(2) - 1, lifetimeKm: 6.0);
+      final s = completeOneSession(s0, t0);
+      expect(s.level, 3);
+      expect(s.pendingReveal!.newMapIndex, mapIndexForLevel(3));
+      expect(s.badgeIds, contains('map-2'));
+      expect(s.pendingReveal!.xpGained, 18);
+    });
+
+    test('marker XP can fund an extra level-up', () {
+      // base XP reaches level 2 with room to spare; the map-marker XP then
+      // carries the climb into level 3 — two levels from one session.
+      final s0 =
+          GameState.initial.copyWith(level: 1, xpIntoLevel: gm.xpToNext(1) - 1);
+      final s = completeOneSession(s0, t0);
+      expect(s.level, 3);
+      expect(s.pendingReveal!.xpGained, 18); // base 11 + marker 7
     });
   });
 

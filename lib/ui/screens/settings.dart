@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter/widgets.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/game_math.dart' as gm;
@@ -25,10 +26,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _confirmingReset = false;
   Timer? _confirmTimer;
 
+  // The full installed version, read from the build at runtime so it always
+  // matches the actual APK/AAB (versionName + versionCode, e.g. "1.3.2+11") —
+  // no manual sync with pubspec. Empty until loaded.
+  String _version = '';
+
   // Optional support link. Opens in the external browser and unlocks nothing
   // inside the app, so Wayfarer stays free with no in-app purchases.
   static final Uri _supportUrl =
       Uri.parse('https://buymeacoffee.com/monsoonwinds');
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() => _version = '${info.version}+${info.buildNumber}');
+    } catch (_) {
+      // Version is informational only; never let it break Settings.
+    }
+  }
 
   @override
   void dispose() {
@@ -136,10 +158,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 30),
                     _ToggleRow(
-                      label: 'Completion alert',
-                      detail:
-                          'A system notification when a session or break ends — '
-                          'the only notification Wayfarer will ever send.',
+                      label: 'Notifications',
+                      detail: 'A quiet status while a session runs, and an '
+                          'alert when it ends.',
                       value: settings.notificationsEnabled,
                       onChanged: controller.setNotificationsEnabled,
                     ),
@@ -154,25 +175,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 !controller.notificationsAuthorized;
                         if (!blocked) return const SizedBox.shrink();
                         return Padding(
-                          padding: const EdgeInsets.only(top: 12),
+                          padding: const EdgeInsets.only(top: 14),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Notifications are blocked by Android. Turn them '
-                                'on to hear the chime when a session ends while '
-                                'the app is in the background.',
+                                'Notifications are blocked by Android.',
                                 style: Type.body(p,
                                     size: 12,
                                     color: p.inkSoft.withValues(alpha: 0.8)),
                               ),
-                              const SizedBox(height: 2),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: QuietLink(
-                                  label: 'Open notification settings',
-                                  onTap: controller.openNotificationSettings,
-                                ),
+                              const SizedBox(height: 14),
+                              _OutlineButton(
+                                label: 'OPEN NOTIFICATION SETTINGS',
+                                onTap: controller.openNotificationSettings,
                               ),
                             ],
                           ),
@@ -213,13 +229,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           size: 12, color: p.inkSoft.withValues(alpha: 0.8)),
                     ),
                     const SizedBox(height: 16),
-                    _SupportButton(onTap: _openSupport),
+                    _OutlineButton(label: 'BUY ME A COFFEE', onTap: _openSupport),
                     const SizedBox(height: 48),
 
                     Text('ABOUT', style: Type.label(p, size: 10)),
                     const SizedBox(height: 14),
                     Text(
-                      'Wayfarer 1.2\n\nA calm pomodoro journey.',
+                      _version.isEmpty
+                          ? 'Wayfarer\n\nA calm pomodoro journey.'
+                          : 'Wayfarer $_version\n\nA calm pomodoro journey.',
                       style: Type.body(p, size: 13, color: p.inkSoft),
                     ),
                   ],
@@ -492,11 +510,14 @@ class _ResetButton extends StatelessWidget {
   }
 }
 
-/// Optional "buy me a coffee" tile — a quiet bordered action in the app's
-/// neutral ink (not the danger red of reset). Opens an external link.
-class _SupportButton extends StatelessWidget {
+/// A quiet bordered action in the app's neutral ink (not the danger red of
+/// reset) — used for "Buy me a coffee" and the "Open notification settings"
+/// recovery action, so both read identically. Full-width with a centred label,
+/// matching the Reset button's footprint.
+class _OutlineButton extends StatelessWidget {
+  final String label;
   final VoidCallback onTap;
-  const _SupportButton({required this.onTap});
+  const _OutlineButton({required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -513,7 +534,7 @@ class _SupportButton extends StatelessWidget {
         ),
         child: Center(
           child: Text(
-            'BUY ME A COFFEE',
+            label,
             style:
                 Type.label(p, size: 12, color: p.ink.withValues(alpha: 0.85)),
           ),

@@ -1,13 +1,22 @@
-/// Session-end notifications — the only notification this app may ever send.
+/// Session notifications — the only notifications this app may ever send.
 ///
-/// One local notification is scheduled when a focus session or break starts,
-/// announcing its completion; it is cancelled on pause, early end, or live
-/// in-app completion. Notifications are presentation only: timer correctness
-/// never depends on them. The completion banner carries the app's own chime as
-/// its sound and follows the phone's ringer for vibration — it chimes when the
-/// ring volume is up, vibrates when the phone is on vibrate, and stays silent
-/// under Do Not Disturb.
+/// Two kinds, on two channels:
+///   • The completion alert (id [phaseEndId], channel 'session_end_v4',
+///     high importance): scheduled when a focus session or break starts,
+///     announcing its end. It carries the app's own chime and follows the
+///     phone's ringer for vibration — chiming when the ring volume is up,
+///     vibrating on vibrate, silent under Do Not Disturb. It is a fresh,
+///     distinct post (separate from the ongoing status below) so the OS always
+///     re-alerts when it fires.
+///   • The ongoing status (id [sessionActiveId], channel 'session_active',
+///     low importance): a quiet "Focusing until …" banner shown while the app
+///     is in the background. No sound, no vibration, no heads-up — it just sits
+///     in the shade and clears when the session ends or the app is reopened.
+///
+/// Notifications are presentation only: timer correctness never depends on them.
 library;
+
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -15,17 +24,32 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 class NotificationService {
+  /// The completion alert (chime + vibration).
   static const int phaseEndId = 1;
+
+  /// The ongoing, silent "session in progress" status. A distinct id from
+  /// [phaseEndId] so the completion alert fires as its own fresh notification
+  /// and the OS reliably re-alerts, instead of silently replacing this one.
+  static const int sessionActiveId = 2;
 
   /// The current channel id. A channel's sound and vibration are immutable once
   /// Android has created it, so a new id is the only way installs that already
   /// had the old (silent, no-vibration) 'session_end' channel pick up the chime
   /// and vibration. The legacy channel is deleted in [init].
-  static const String _channelId = 'session_end_v2';
-  static const String _legacyChannelId = 'session_end';
+  static const String _channelId = 'session_end_v4';
   static const String _channelName = 'Session complete';
   static const String _channelDescription =
-      'Announces when a focus session or break finishes. Nothing else.';
+      'Announces when a focus session or break finishes.';
+
+  /// Low-importance, silent channel for the ongoing status notification — no
+  /// sound, no vibration, no heads-up; it simply sits in the shade.
+  static const String _activeChannelId = 'session_active';
+  static const String _activeChannelName = 'Session in progress';
+  static const String _activeChannelDescription =
+      'A quiet, ongoing status shown while a focus session or break is running.';
+
+  static final Int64List _vibrationPattern =
+      Int64List.fromList([0, 500, 250, 500]);
 
   /// The bundled chime (res/raw/session_chime.wav) — the same tone the app
   /// plays in the foreground, produced by tool/generate_chime.dart.
@@ -56,12 +80,12 @@ class NotificationService {
     );
     try {
       await _plugin.initialize(settings);
-      // Drop the legacy channel (locked to no custom sound and no vibration)
-      // and create the current one with the chime and vibration. Both calls are
-      // idempotent and preserve any later user customisation of session_end_v2.
-      await _android?.deleteNotificationChannel(_legacyChannelId);
+      // Drop legacy channels to clear cached Android configuration (no sound, no vibration)
+      await _android?.deleteNotificationChannel('session_end');
+      await _android?.deleteNotificationChannel('session_end_v2');
+      await _android?.deleteNotificationChannel('session_end_v3');
       await _android?.createNotificationChannel(
-        const AndroidNotificationChannel(
+        AndroidNotificationChannel(
           _channelId,
           _channelName,
           description: _channelDescription,
@@ -69,6 +93,17 @@ class NotificationService {
           playSound: true,
           sound: _sound,
           enableVibration: true,
+          vibrationPattern: _vibrationPattern,
+        ),
+      );
+      await _android?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _activeChannelId,
+          _activeChannelName,
+          description: _activeChannelDescription,
+          importance: Importance.low,
+          playSound: false,
+          enableVibration: false,
         ),
       );
       _ready = true;
@@ -115,7 +150,7 @@ class NotificationService {
     required String body,
   }) async {
     if (!_ready) return;
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: AndroidNotificationDetails(
         _channelId,
         _channelName,
@@ -125,6 +160,7 @@ class NotificationService {
         playSound: true,
         sound: _sound,
         enableVibration: true,
+        vibrationPattern: _vibrationPattern,
       ),
     );
     final when =
@@ -149,6 +185,52 @@ class NotificationService {
     if (!_ready) return;
     try {
       await _plugin.cancel(phaseEndId);
+    } catch (_) {}
+  }
+
+  /// Shows the quiet, ongoing "session in progress" status while backgrounded.
+  /// Silent and low-priority (its own channel), so it never chimes, vibrates, or
+  /// peeks. [timeoutAfterMs], when given, auto-dismisses it the moment the
+  /// session ends, just as the completion alert fires — leaving only the alert.
+  Future<void> showSessionActive({
+    required String title,
+    required String body,
+    int? timeoutAfterMs,
+  }) async {
+    if (!_ready) return;
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _activeChannelId,
+        _activeChannelName,
+        channelDescription: _activeChannelDescription,
+        importance: Importance.low,
+        priority: Priority.low,
+        playSound: false,
+        enableVibration: false,
+        silent: true,
+        ongoing: true,
+        autoCancel: false,
+        onlyAlertOnce: true,
+        showWhen: false,
+        timeoutAfter: (timeoutAfterMs != null && timeoutAfterMs > 0)
+            ? timeoutAfterMs
+            : null,
+      ),
+    );
+    try {
+      await _plugin.show(
+        sessionActiveId,
+        title,
+        body,
+        details,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> cancelSessionActive() async {
+    if (!_ready) return;
+    try {
+      await _plugin.cancel(sessionActiveId);
     } catch (_) {}
   }
 }

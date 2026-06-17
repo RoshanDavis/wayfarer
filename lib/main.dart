@@ -64,6 +64,12 @@ class _WayfarerAppState extends State<WayfarerApp>
         setState(() => _foreground = true);
         controller.onAppResumed();
       case AppLifecycleState.inactive:
+        // Transient only — the OS permission dialog, the notification shade, an
+        // incoming call, the app switcher. Not a real backgrounding: keep the
+        // session ticking and don't post the ongoing notification, which would
+        // otherwise flash in and straight back out. A genuine background always
+        // follows with hidden/paused below.
+        break;
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
       case AppLifecycleState.detached:
@@ -104,7 +110,7 @@ class _WayfarerAppState extends State<WayfarerApp>
               map: accentForSession(s.sessionsCompleted,
                   seed: controller.accentSeed),
               brightness: brightness,
-              cycle: mapCycleForSets(s.setsCompleted),
+              cycle: mapCycleForLevel(s.level),
               soften: softened ? 1 : 0,
             );
 

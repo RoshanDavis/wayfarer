@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12+ (API 31+) backup/transfer control. android:allowBackup="false"
+    already disables cloud backup on every version, but device-to-device
+    transfer on API 31+ is NOT governed by allowBackup — so exclude every domain
+    here too, completing the app's deliberate "no backup, no transfer" stance
+    (Wayfarer keeps only local game state and reconstructs from the wall clock;
+    restoring a stale snapshot onto another device serves no purpose).
+    Pre-31 devices fall back to android:fullBackupContent="false".
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

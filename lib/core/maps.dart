@@ -1,8 +1,6 @@
-/// The 24 world maps and map progression. Pure Dart — maps are pure data;
+/// The 25 world maps and map progression. Pure Dart — maps are pure data;
 /// rendering interprets [Terrain] and [MapDecor] elsewhere.
 library;
-
-import 'game_math.dart' as gm;
 
 /// Silhouette profile families used to generate landscape layers.
 enum Terrain {
@@ -56,7 +54,7 @@ class WorldMap {
       [this.decor = MapDecor.none, this.particle = MapParticle.none]);
 }
 
-/// The 24 maps, in journey order. The cycle loops with subtle variation.
+/// The 25 maps, in journey order. The cycle loops with subtle variation.
 const List<WorldMap> kMaps = [
   WorldMap('The Garden', 100, 0.42, Terrain.softHills, MapDecor.none,
       MapParticle.pollen),
@@ -106,29 +104,27 @@ const List<WorldMap> kMaps = [
       MapParticle.none),
   WorldMap('The Stratosphere', 228, 0.38, Terrain.cloudLayers, MapDecor.none,
       MapParticle.drift),
+  WorldMap('Maple Wood', 28, 0.50, Terrain.jaggedTreeline, MapDecor.none,
+      MapParticle.pollen),
 ];
 
-/// Index into [kMaps] for a player with [setsCompleted] completed sets.
-/// The map advances every [gm.kSetsPerMap] sets and loops past the end.
-int mapIndexForSets(int setsCompleted) =>
-    (setsCompleted ~/ gm.kSetsPerMap) % kMaps.length;
+/// Index into [kMaps] for a player at [level]. The map advances every level and
+/// loops past the end — level 1 is map 0, level 25 is map 24, level 26 wraps to
+/// map 0. Consecutive levels always differ (i+1 mod N != i for N > 1), so any
+/// level-up changes the map.
+int mapIndexForLevel(int level) => (level - 1) % kMaps.length;
 
-/// How many times the 24-map cycle has been completed. Cycles past the first
-/// re-render with subtle variation (shifted lightness, reseeded terrain).
-int mapCycleForSets(int setsCompleted) =>
-    (setsCompleted ~/ gm.kSetsPerMap) ~/ kMaps.length;
+/// How many full [kMaps]-length loops the player has completed at [level].
+/// Cycles past the first re-render with subtle variation (shifted lightness,
+/// reseeded terrain).
+int mapCycleForLevel(int level) => (level - 1) ~/ kMaps.length;
 
-/// True when completing a set moved the player onto a new map —
-/// i.e. [setsCompleted] (the new total) is a multiple of [gm.kSetsPerMap].
-bool mapChangedAtSet(int setsCompleted) =>
-    setsCompleted > 0 && setsCompleted % gm.kSetsPerMap == 0;
-
-WorldMap mapForSets(int setsCompleted) => kMaps[mapIndexForSets(setsCompleted)];
+WorldMap mapForLevel(int level) => kMaps[mapIndexForLevel(level)];
 
 /// The accent palette (hue + saturation) for a player with [sessionsCompleted]
 /// completed focus sessions. Unlike the map — which governs terrain shape and
-/// advances only every few sets — the accent steps through the 24 curated map
-/// palettes once per completed session, so the colour refreshes every session
+/// advances every level — the accent steps through the curated map palettes (25)
+/// once per completed session, so the colour refreshes every session
 /// while the journey itself keeps its slow pace.
 ///
 /// [seed] offsets the starting colour: the app rolls a fresh random seed on

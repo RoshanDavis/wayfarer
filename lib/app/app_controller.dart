@@ -6,7 +6,7 @@ library;
 import 'dart:async';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../core/game_math.dart' as gm;
 import '../core/models.dart';
@@ -30,7 +30,7 @@ class AppController extends ChangeNotifier {
       unawaited(_persistence.save(next));
     }
     _syncTicker();
-    unawaited(_refreshNotificationPermission());
+    unawaited(_initNotifications());
   }
 
   final Persistence _persistence;
@@ -64,6 +64,11 @@ class AppController extends ChangeNotifier {
   /// true state from wall-clock timestamps.
   void onAppResumed() {
     _foreground = true;
+    // Clear the ongoing status banner, and suppress the scheduled completion
+    // alert while the app is open — the live in-app reveal announces the end.
+    // (onAppPaused re-schedules it if the user backgrounds again mid-session.)
+    unawaited(_notifications.cancelSessionActive());
+    unawaited(_notifications.cancelPhaseEnd());
     // The user may have flipped the OS permission while away (e.g. via the
     // settings deep-link); re-read it so the hint stays accurate.
     unawaited(_refreshNotificationPermission());
@@ -73,6 +78,8 @@ class AppController extends ChangeNotifier {
       _apply(next);
     } else {
       _syncTicker();
+      // Reschedule the notification since we cancelled it
+      _schedulePhaseEndNotification(_state);
       notifyListeners();
     }
   }
@@ -84,6 +91,12 @@ class AppController extends ChangeNotifier {
     // Save the latest (e.g. idle-recovered) stamina. Re-derivable from the sync
     // point regardless, but persisting keeps the on-disk snapshot current.
     unawaited(_persistence.save(_state));
+    // Backgrounding is the moment the completion alert matters most: (re)schedule
+    // it so it fires even if the alarm was never set this run (e.g. the app was
+    // cold-started mid-session). Idempotent — same id replaces. Then show the
+    // quiet ongoing status.
+    _schedulePhaseEndNotification(_state);
+    _showSessionActiveNotification();
   }
 
   // ---------------------------------------------------------------------
@@ -191,6 +204,7 @@ class AppController extends ChangeNotifier {
         settings: _state.settings.copyWith(notificationsEnabled: enabled)));
     if (!enabled) {
       unawaited(_notifications.cancelPhaseEnd());
+      unawaited(_notifications.cancelSessionActive());
       return;
     }
     // Enabling is the natural moment to ask: the OS shows its permission dialog
@@ -203,6 +217,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> resetData() async {
     await _notifications.cancelPhaseEnd();
+    await _notifications.cancelSessionActive();
     await _persistence.reset();
     _state = GameState.initial;
     _syncTicker();
@@ -330,10 +345,53 @@ class AppController extends ChangeNotifier {
     ));
   }
 
+  void _showSessionActiveNotification() {
+    if (!_state.settings.notificationsEnabled) return;
+    final t = _state.timer;
+    if (t.phaseEndsAtMs == null) return;
+    final isFocus = t.phase == Phase.focusRunning;
+    if (!isFocus && t.phase != Phase.breakRunning) return;
+
+    final dt = DateTime.fromMillisecondsSinceEpoch(t.phaseEndsAtMs!).toLocal();
+    final hourVal = dt.hour;
+    final amPm = hourVal >= 12 ? 'PM' : 'AM';
+    final displayHour = hourVal == 0 ? 12 : (hourVal > 12 ? hourVal - 12 : hourVal);
+    final minuteStr = dt.minute.toString().padLeft(2, '0');
+    final timeStr = '$displayHour:$minuteStr $amPm';
+
+    unawaited(_notifications.showSessionActive(
+      title: isFocus ? 'Focus session active' : 'Break active',
+      body: isFocus ? 'Focusing until $timeStr.' : 'Resting until $timeStr.',
+      timeoutAfterMs: t.phaseEndsAtMs! - nowMs,
+    ));
+  }
+
   Future<void> _ensureNotificationPermission() async {
     if (!_state.settings.notificationsEnabled) return;
     _notificationsAuthorized = await _notifications.ensurePermission();
     notifyListeners();
+  }
+
+  /// Notification setup at launch. If the user wants completion alerts but the
+  /// OS hasn't granted POST_NOTIFICATIONS yet, ask for it once the first frame
+  /// is up — this is what surfaces Android 13+'s permission dialog on a fresh
+  /// install. The request is a silent no-op once the user has already decided
+  /// (granted or denied), so it never nags and is safe to run every launch;
+  /// crucially it is *not* gated on a "first run" flag, which a stray save from
+  /// an aborted first launch could wrongly clear, permanently suppressing the
+  /// prompt. We never auto-disable the toggle on denial — the Settings "blocked"
+  /// hint and its system-settings deep link are the recovery path instead.
+  Future<void> _initNotifications() async {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // The OS only shows its permission dialog for a resumed, focused
+      // activity; a short settle keeps the request from being silently dropped
+      // during the launch transition on physical devices.
+      await Future.delayed(const Duration(milliseconds: 500));
+      _notificationsAuthorized = _state.settings.notificationsEnabled
+          ? await _notifications.ensurePermission()
+          : await _notifications.areEnabled();
+      notifyListeners();
+    });
   }
 
   /// Re-reads the OS permission state (e.g. after the user toggles it in system

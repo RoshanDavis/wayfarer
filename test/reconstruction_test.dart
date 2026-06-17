@@ -7,6 +7,8 @@ library;
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wayfarer/core/game_math.dart' as gm;
+import 'package:wayfarer/core/maps.dart';
 import 'package:wayfarer/core/models.dart';
 import 'package:wayfarer/core/session_engine.dart';
 
@@ -40,7 +42,7 @@ void main() {
       expect(wake.timer.phase, Phase.focusComplete);
       expect(wake.lifetimeKm, closeTo(25 / 60, 1e-9));
       expect(wake.sessionsCompleted, 1);
-      expect(wake.xpIntoLevel, 10);
+      expect(wake.xpIntoLevel, 11); // 10 time XP × 1.05 (the end day is active)
       // The session's drain is resolved at the end time; stamina then recovers
       // passively over the long idle gap — fully, nine hours on.
       expect(wake.stamina, closeTo(100, 1e-9));
@@ -174,21 +176,18 @@ void main() {
       expect(s.totalFocusSeconds, 1500);
     });
 
-    test('a set boundary resolved while dead still changes the map', () {
-      // 11 completed sessions; the 12th completes while the app is dead.
-      var s = GameState.initial;
-      var clock = t0;
-      for (var i = 0; i < 11; i++) {
-        s = Engine.startFocus(s, clock);
-        s = Engine.reconstruct(s, clock + 25 * minMs);
-        s = Engine.skipBreak(s);
-        clock += hourMs;
-      }
-      s = Engine.startFocus(s, clock);
-      s = killAndRelaunch(s, clock + 6 * hourMs);
-      expect(s.setsCompleted, 3);
-      expect(s.pendingReveal!.newMapIndex, 1);
-      expect(s.badgeIds, contains('map-1'));
+    test('a level-up resolved while dead still changes the map', () {
+      // Poised one XP shy of level 3; the session that crosses it completes
+      // while the app is dead. The map advance and its badge resolve at the
+      // scheduled end, identical to a live completion.
+      final s0 = GameState.initial
+          .copyWith(level: 2, xpIntoLevel: gm.xpToNext(2) - 1, lifetimeKm: 6.0);
+      final s = Engine.startFocus(s0, t0);
+      final wake = killAndRelaunch(s, t0 + 6 * hourMs);
+      expect(wake.timer.phase, Phase.focusComplete);
+      expect(wake.level, 3);
+      expect(wake.pendingReveal!.newMapIndex, mapIndexForLevel(3));
+      expect(wake.badgeIds, contains('map-2'));
     });
   });
 }

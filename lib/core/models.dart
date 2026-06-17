@@ -52,6 +52,9 @@ class TimerState {
   /// Distance banked at pauses for the in-flight session.
   final double bankedDistanceKm;
 
+  /// XP banked at pauses for the in-flight session.
+  final int bankedXp;
+
   /// Stamina at session start — fixes the speed modifier for the session.
   final double staminaAtSessionStart;
 
@@ -72,6 +75,7 @@ class TimerState {
     this.phaseEndsAtMs,
     this.accumulatedFocusMs = 0,
     this.bankedDistanceKm = 0,
+    this.bankedXp = 0,
     this.staminaAtSessionStart = gm.kMaxStamina,
     this.levelAtSessionStart = 1,
     this.staminaAtBreakStart = gm.kMaxStamina,
@@ -112,6 +116,7 @@ class TimerState {
     int? phaseEndsAtMs,
     int? accumulatedFocusMs,
     double? bankedDistanceKm,
+    int? bankedXp,
     double? staminaAtSessionStart,
     int? levelAtSessionStart,
     double? staminaAtBreakStart,
@@ -126,6 +131,7 @@ class TimerState {
         phaseEndsAtMs: clearSegment ? null : phaseEndsAtMs ?? this.phaseEndsAtMs,
         accumulatedFocusMs: accumulatedFocusMs ?? this.accumulatedFocusMs,
         bankedDistanceKm: bankedDistanceKm ?? this.bankedDistanceKm,
+        bankedXp: bankedXp ?? this.bankedXp,
         staminaAtSessionStart:
             staminaAtSessionStart ?? this.staminaAtSessionStart,
         levelAtSessionStart: levelAtSessionStart ?? this.levelAtSessionStart,
@@ -140,6 +146,7 @@ class TimerState {
         'phaseEndsAtMs': phaseEndsAtMs,
         'accumulatedFocusMs': accumulatedFocusMs,
         'bankedDistanceKm': bankedDistanceKm,
+        'bankedXp': bankedXp,
         'staminaAtSessionStart': staminaAtSessionStart,
         'levelAtSessionStart': levelAtSessionStart,
         'staminaAtBreakStart': staminaAtBreakStart,
@@ -155,6 +162,7 @@ class TimerState {
         phaseEndsAtMs: json['phaseEndsAtMs'] as int?,
         accumulatedFocusMs: json['accumulatedFocusMs'] as int? ?? 0,
         bankedDistanceKm: (json['bankedDistanceKm'] as num?)?.toDouble() ?? 0,
+        bankedXp: json['bankedXp'] as int? ?? 0,
         staminaAtSessionStart:
             (json['staminaAtSessionStart'] as num?)?.toDouble() ??
                 gm.kMaxStamina,
@@ -261,7 +269,7 @@ class Settings {
 
   const Settings({
     this.theme = ThemePreference.system,
-    this.soundEnabled = false,
+    this.soundEnabled = true,
     this.notificationsEnabled = true,
     this.focusMinutes = gm.kFocusMinutes,
     this.shortBreakMinutes = gm.kShortBreakMinutes,
@@ -301,7 +309,7 @@ class Settings {
   factory Settings.fromJson(Map<String, Object?> json) => Settings(
         theme: ThemePreference.values
             .byName(json['theme'] as String? ?? 'system'),
-        soundEnabled: json['soundEnabled'] as bool? ?? false,
+        soundEnabled: json['soundEnabled'] as bool? ?? true,
         notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
         focusMinutes: json['focusMinutes'] as int? ?? gm.kFocusMinutes,
         shortBreakMinutes:

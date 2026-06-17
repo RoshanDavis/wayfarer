@@ -26,6 +26,20 @@ String dateKey(int epochMs) {
   return '${d.year.toString().padLeft(4, '0')}-$m-$day';
 }
 
+/// Count of distinct days with focus minutes in the trailing
+/// [gm.kConsistencyWindowDays] window ending at [endMs] (inclusive) — the same
+/// window the Journey's 14-day chart draws. Drives the consistency multiplier.
+int activeDaysInWindow(Map<String, int> daily, int endMs) {
+  final end = DateTime.fromMillisecondsSinceEpoch(endMs);
+  var count = 0;
+  for (var i = 0; i < gm.kConsistencyWindowDays; i++) {
+    final key =
+        dateKey(end.subtract(Duration(days: i)).millisecondsSinceEpoch);
+    if ((daily[key] ?? 0) > 0) count++;
+  }
+  return count;
+}
+
 class Engine {
   Engine._();
 
@@ -68,8 +82,17 @@ class Engine {
         .clamp(0, t.plannedDurationMs - t.accumulatedFocusMs);
     final segmentDistance = gm.distanceKm(
       levelAtSessionStart: t.levelAtSessionStart,
-      staminaAtSessionStart: t.staminaAtSessionStart,
+      // Stamina at the start of *this* segment — so the half-rate debuff
+      // engages the instant the bar empties mid-session.
+      staminaAtSessionStart: s.stamina,
       elapsedFocusMs: segmentMs,
+      focusDurationMs: t.plannedDurationMs,
+    );
+    final segmentXp = gm.xpForFocus(
+      elapsedFocusMs: segmentMs,
+      staminaAtSessionStart: s.stamina,
+      level: t.levelAtSessionStart,
+      focusDurationMs: t.plannedDurationMs,
     );
     final drain = gm.drainFor(
       level: t.levelAtSessionStart,
@@ -85,6 +108,7 @@ class Engine {
         clearSegment: true,
         accumulatedFocusMs: t.accumulatedFocusMs + segmentMs,
         bankedDistanceKm: t.bankedDistanceKm + segmentDistance,
+        bankedXp: t.bankedXp + segmentXp,
       ),
     );
   }
@@ -130,7 +154,7 @@ class Engine {
       stamina: state.stamina,
       distance: distance,
       elapsedFocusMs: elapsedMs,
-      staminaAtSessionStart: t.staminaAtSessionStart,
+      timeXp: t.bankedXp,
       completed: false,
       dayKeyMs: nowMs,
       syncAtMs: nowMs,
@@ -225,9 +249,18 @@ class Engine {
     final distance = t.bankedDistanceKm +
         gm.distanceKm(
           levelAtSessionStart: t.levelAtSessionStart,
-          staminaAtSessionStart: t.staminaAtSessionStart,
+          // Stamina at the start of the final segment, so a mid-session empty
+          // bar halves only the distance travelled after it emptied.
+          staminaAtSessionStart: s.stamina,
           elapsedFocusMs: segmentMs,
+          focusDurationMs: focusDurationMs,
         );
+    final segmentXp = gm.xpForFocus(
+      elapsedFocusMs: segmentMs,
+      staminaAtSessionStart: s.stamina,
+      level: t.levelAtSessionStart,
+      focusDurationMs: focusDurationMs,
+    );
     final drain = gm.drainFor(
       level: t.levelAtSessionStart,
       elapsedFocusMs: segmentMs,
@@ -240,7 +273,7 @@ class Engine {
       stamina: stamina,
       distance: distance,
       elapsedFocusMs: focusDurationMs,
-      staminaAtSessionStart: t.staminaAtSessionStart,
+      timeXp: t.bankedXp + segmentXp,
       completed: true,
       // Idle recovery accrues from the moment focus ended, not from when we
       // noticed — so a late wake-up still credits the full rest since.
@@ -250,19 +283,20 @@ class Engine {
   }
 
   /// Shared tail of finishing a focus segment: awards time-based XP (plus the
-  /// set bonus on a full set), resolves level-ups and tier/comparison/odometer/
-  /// map badges, banks distance and focus time, and routes to the pending-break
-  /// (focusComplete) state. [completed] distinguishes a full session — which
-  /// counts the session and set, adds the set bonus and map progression, and
-  /// takes the long break every 4th — from an early end, which counts neither
-  /// and always takes a short break (the long break is earned only by finishing
-  /// a set).
+  /// set bonus on a full set and a marker bonus per badge earned, all lifted by
+  /// the recent-consistency multiplier), resolves level-ups and tier/comparison/
+  /// odometer/map badges, banks distance and focus time, and routes to the
+  /// pending-break (focusComplete) state. [completed] distinguishes a full
+  /// session — which counts the session and set, adds the set bonus, and takes
+  /// the long break every 4th — from an early end, which counts neither and
+  /// always takes a short break (the long break is earned only by finishing a
+  /// set). The map advances on any level-up, independent of sets.
   static GameState _finishFocus(
     GameState s, {
     required double stamina,
     required double distance,
     required int elapsedFocusMs,
-    required double staminaAtSessionStart,
+    required int timeXp,
     required bool completed,
     required int dayKeyMs,
     required int syncAtMs,
@@ -275,32 +309,8 @@ class Engine {
         : s.sessionIndexInSet;
     final newSets = s.setsCompleted + (completedSet ? 1 : 0);
 
-    // XP and level-ups: time-based base (halved at 0% stamina) + set bonus.
-    final xpGained = gm.xpForFocus(
-          elapsedFocusMs: elapsedFocusMs,
-          staminaAtSessionStart: staminaAtSessionStart,
-        ) +
-        (completedSet ? gm.kXpSetBonus : 0);
-    final progress = gm.applyXp(
-        level: s.level, xpIntoLevel: s.xpIntoLevel, gained: xpGained);
-
-    // Tier crossings.
-    final tiers = tiersReachedBetween(s.level, progress.level);
-
-    // Speed-comparison crossings (awarded exactly once via the badge set).
-    final crossings = [
-      for (final c
-          in crossingsBetween(gm.paceKmh(s.level), gm.paceKmh(progress.level)))
-        if (!s.badgeIds.contains(comparisonBadgeId(c.id))) c,
-    ];
-
-    // Map progression: changes exactly every kSetsPerMap completed sets.
-    int? newMapIndex;
-    if (completedSet && mapChangedAtSet(newSets)) {
-      newMapIndex = mapIndexForSets(newSets);
-    }
-
-    // Odometer milestones.
+    // Odometer milestones depend only on distance (independent of XP), so they
+    // resolve up front and feed the marker count below.
     final oldKm = s.lifetimeKm;
     final newKm = oldKm + distance;
     final milestones = [
@@ -308,15 +318,64 @@ class Engine {
         if (!s.badgeIds.contains(m.id)) m,
     ];
 
+    // Daily history, updated once and reused for the consistency window and the
+    // final state. Counting today (via dayKeyMs) makes the awarded bonus match
+    // what the 14-day chart shows after this session.
+    final dailyAfter = _addDailyMinutes(
+        s.dailyFocusMinutes, dateKey(dayKeyMs), elapsedFocusMs ~/ 60000);
+    final mult =
+        gm.consistencyMultiplier(activeDaysInWindow(dailyAfter, dayKeyMs));
+
+    // Base XP: time-based (with the mid-session stamina debuff applied inside
+    // xpForFocus) plus the set bonus, lifted by the consistency multiplier.
+    final setBonus = completedSet ? gm.kXpSetBonus : 0;
+    final baseXp = ((timeXp + setBonus) * mult).round();
+
+    // Markers award XP too, which can fund another level and so cross more
+    // markers. Resolve level, marker count and marker XP together by iterating
+    // to a fixpoint — always re-levelling from the original anchor so base XP is
+    // never double-counted. The marker count only grows with level, so this
+    // converges in a pass or two; the cap is a safety net.
+    var markerXp = 0;
+    var markerCount = -1;
+    var progress = gm.applyXp(
+        level: s.level, xpIntoLevel: s.xpIntoLevel, gained: baseXp);
+    for (var pass = 0; pass < gm.kMaxMarkerPasses; pass++) {
+      progress = gm.applyXp(
+          level: s.level,
+          xpIntoLevel: s.xpIntoLevel,
+          gained: baseXp + markerXp);
+      final count = _markerCount(s, progress.level, milestones.length);
+      if (count == markerCount) break;
+      markerCount = count;
+      markerXp = (gm.kXpPerMarker * count * mult).round();
+    }
+
+    // Concrete marker lists at the final level — the single source of truth for
+    // both the awarded badges and the reveal.
+    final tiers = tiersReachedBetween(s.level, progress.level);
+    final crossings = [
+      for (final c
+          in crossingsBetween(gm.paceKmh(s.level), gm.paceKmh(progress.level)))
+        if (!s.badgeIds.contains(comparisonBadgeId(c.id))) c,
+    ];
+    // The map advances on any level-up. The terrain still advances when the map
+    // badge is a repeat (a later cycle of the 25 maps); only the badge/XP dedup.
+    final int? newMapIndex =
+        progress.level > s.level ? mapIndexForLevel(progress.level) : null;
+
     // Badges, in reveal order: tier, map, comparison, odometer.
     final newBadgeIds = <String>[
       for (final tier in tiers)
-        if (!s.badgeIds.contains(tierBadgeId(tier.level))) tierBadgeId(tier.level),
+        if (!s.badgeIds.contains(tierBadgeId(tier.level)))
+          tierBadgeId(tier.level),
       if (newMapIndex != null && !s.badgeIds.contains(mapBadgeId(newMapIndex)))
         mapBadgeId(newMapIndex),
       for (final c in crossings) comparisonBadgeId(c.id),
       for (final m in milestones) m.id,
     ];
+
+    final xpGained = baseXp + markerXp;
 
     final nextBreak =
         completed && newSessionIndex == 0 ? BreakKind.long : BreakKind.short;
@@ -331,8 +390,7 @@ class Engine {
       xpIntoLevel: progress.xpIntoLevel,
       level: progress.level,
       badgeIds: {...s.badgeIds, ...newBadgeIds},
-      dailyFocusMinutes: _addDailyMinutes(
-          s.dailyFocusMinutes, dateKey(dayKeyMs), elapsedFocusMs ~/ 60000),
+      dailyFocusMinutes: dailyAfter,
       staminaSyncedAtMs: syncAtMs,
       timer: TimerState(phase: Phase.focusComplete, breakKind: nextBreak),
       pendingReveal: RevealSequence(
@@ -350,6 +408,28 @@ class Engine {
             : NextAction.shortBreak,
       ),
     );
+  }
+
+  /// Number of markers (badges) the session would award if it ended at
+  /// [finalLevel]: unearned tier, map, and comparison badges crossed between
+  /// `s.level` and [finalLevel], plus [odometerCount] already-resolved odometer
+  /// milestones. Filtered against `s.badgeIds` so the marker XP matches the
+  /// badges actually shown.
+  static int _markerCount(GameState s, int finalLevel, int odometerCount) {
+    final tierCount = [
+      for (final tier in tiersReachedBetween(s.level, finalLevel))
+        if (!s.badgeIds.contains(tierBadgeId(tier.level))) tier,
+    ].length;
+    final comparisonCount = [
+      for (final c
+          in crossingsBetween(gm.paceKmh(s.level), gm.paceKmh(finalLevel)))
+        if (!s.badgeIds.contains(comparisonBadgeId(c.id))) c,
+    ].length;
+    final mapCount = finalLevel > s.level &&
+            !s.badgeIds.contains(mapBadgeId(mapIndexForLevel(finalLevel)))
+        ? 1
+        : 0;
+    return tierCount + comparisonCount + mapCount + odometerCount;
   }
 
   /// Applies break recovery for [fraction] of the break (1.0 = full) and

@@ -19,7 +19,7 @@ import '../../core/comparisons.dart' as cmp;
 import '../../core/game_math.dart' as gm;
 import '../../core/maps.dart';
 import '../../core/models.dart';
-import '../../core/session_engine.dart' show dateKey;
+import '../../core/session_engine.dart' show dateKey, activeDaysInWindow;
 import '../../core/tiers.dart';
 import '../app_scope.dart';
 import '../format.dart';
@@ -116,8 +116,8 @@ class _HomeScreenState extends State<HomeScreen> {
               return Transform.translate(offset: Offset(0, dy), child: child);
             },
             child: LandscapeView(
-              mapIndex: mapIndexForSets(s.setsCompleted),
-              cycle: mapCycleForSets(s.setsCompleted),
+              mapIndex: mapIndexForLevel(s.level),
+              cycle: mapCycleForLevel(s.level),
               paceKmh: s.paceKmh,
               tierIndex: tier.index,
               motion: phase == Phase.focusRunning
@@ -149,7 +149,10 @@ class _HomeScreenState extends State<HomeScreen> {
             // the background colour.
             SliverToBoxAdapter(
                 child: _JourneyBody(
-                    state: s, stamina: controller.displayStamina())),
+              state: s,
+              stamina: controller.displayStamina(),
+              controller: controller,
+            )),
           ],
         ),
         // The single control floats over the world. It rests near the ground,
@@ -565,7 +568,12 @@ class _LinkFor extends StatelessWidget {
 class _JourneyBody extends StatelessWidget {
   final GameState state;
   final double stamina;
-  const _JourneyBody({required this.state, required this.stamina});
+  final AppController controller;
+  const _JourneyBody({
+    required this.state,
+    required this.stamina,
+    required this.controller,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -600,7 +608,7 @@ class _JourneyBody extends StatelessWidget {
                 const SizedBox(height: 48),
                 _ProgressSection(state: state, stamina: stamina),
                 const SizedBox(height: 48),
-                _StatsSection(state: state),
+                _StatsSection(state: state, controller: controller),
                 const SizedBox(height: 48),
                 // Markers close the Journey — the collection earned along it.
                 _MarkersSection(badgeIds: state.badgeIds),
@@ -720,7 +728,8 @@ class _MarkersSection extends StatelessWidget {
 
 class _StatsSection extends StatelessWidget {
   final GameState state;
-  const _StatsSection({required this.state});
+  final AppController controller;
+  const _StatsSection({required this.state, required this.controller});
 
   @override
   Widget build(BuildContext context) {
@@ -743,6 +752,22 @@ class _StatsSection extends StatelessWidget {
         Text('LAST 14 DAYS', style: Type.label(p, size: 10)),
         const SizedBox(height: 18),
         _History(dailyMinutes: state.dailyFocusMinutes),
+        Builder(builder: (context) {
+          // +5% XP gain per active day in the window — shown only when earned,
+          // so an empty chart stays quiet. Same window the chart draws.
+          final pct = (gm.consistencyBonusFraction(activeDaysInWindow(
+                      state.dailyFocusMinutes,
+                      controller.nowMs)) *
+                  100)
+              .round();
+          if (pct <= 0) return const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text('+$pct% EXP GAIN',
+                style: Type.label(p,
+                    size: 10, color: p.inkSoft.withValues(alpha: 0.9))),
+          );
+        }),
       ],
     );
   }

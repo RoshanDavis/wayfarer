@@ -18,6 +18,11 @@ class Persistence {
   static Future<Persistence> open() async =>
       Persistence(await SharedPreferences.getInstance());
 
+  /// Whether a saved journey already exists. Read once at launch to tell a
+  /// genuine first run (ask for the notification permission up front) from a
+  /// returning user (don't re-prompt).
+  bool get hasSave => _prefs.getString(storageKey) != null;
+
   /// Loads and migrates persisted state. Any corruption falls back to a
   /// fresh state rather than crashing — the journey must always open.
   GameState load() {
