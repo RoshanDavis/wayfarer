@@ -123,8 +123,8 @@ WorldMap mapForLevel(int level) => kMaps[mapIndexForLevel(level)];
 
 /// The accent palette (hue + saturation) for a player with [sessionsCompleted]
 /// completed focus sessions. Unlike the map — which governs terrain shape and
-/// advances only every few sets — the accent steps through the 24 curated map
-/// palettes once per completed session, so the colour refreshes every session
+/// advances every level — the accent steps through the curated map palettes (25)
+/// once per completed session, so the colour refreshes every session
 /// while the journey itself keeps its slow pace.
 ///
 /// [seed] offsets the starting colour: the app rolls a fresh random seed on

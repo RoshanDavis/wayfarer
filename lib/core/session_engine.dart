@@ -88,6 +88,12 @@ class Engine {
       elapsedFocusMs: segmentMs,
       focusDurationMs: t.plannedDurationMs,
     );
+    final segmentXp = gm.xpForFocus(
+      elapsedFocusMs: segmentMs,
+      staminaAtSessionStart: s.stamina,
+      level: t.levelAtSessionStart,
+      focusDurationMs: t.plannedDurationMs,
+    );
     final drain = gm.drainFor(
       level: t.levelAtSessionStart,
       elapsedFocusMs: segmentMs,
@@ -102,6 +108,7 @@ class Engine {
         clearSegment: true,
         accumulatedFocusMs: t.accumulatedFocusMs + segmentMs,
         bankedDistanceKm: t.bankedDistanceKm + segmentDistance,
+        bankedXp: t.bankedXp + segmentXp,
       ),
     );
   }
@@ -147,8 +154,7 @@ class Engine {
       stamina: state.stamina,
       distance: distance,
       elapsedFocusMs: elapsedMs,
-      staminaAtSessionStart: t.staminaAtSessionStart,
-      focusDurationMs: t.plannedDurationMs,
+      timeXp: t.bankedXp,
       completed: false,
       dayKeyMs: nowMs,
       syncAtMs: nowMs,
@@ -249,6 +255,12 @@ class Engine {
           elapsedFocusMs: segmentMs,
           focusDurationMs: focusDurationMs,
         );
+    final segmentXp = gm.xpForFocus(
+      elapsedFocusMs: segmentMs,
+      staminaAtSessionStart: s.stamina,
+      level: t.levelAtSessionStart,
+      focusDurationMs: focusDurationMs,
+    );
     final drain = gm.drainFor(
       level: t.levelAtSessionStart,
       elapsedFocusMs: segmentMs,
@@ -261,8 +273,7 @@ class Engine {
       stamina: stamina,
       distance: distance,
       elapsedFocusMs: focusDurationMs,
-      staminaAtSessionStart: t.staminaAtSessionStart,
-      focusDurationMs: focusDurationMs,
+      timeXp: t.bankedXp + segmentXp,
       completed: true,
       // Idle recovery accrues from the moment focus ended, not from when we
       // noticed — so a late wake-up still credits the full rest since.
@@ -285,8 +296,7 @@ class Engine {
     required double stamina,
     required double distance,
     required int elapsedFocusMs,
-    required double staminaAtSessionStart,
-    required int focusDurationMs,
+    required int timeXp,
     required bool completed,
     required int dayKeyMs,
     required int syncAtMs,
@@ -318,12 +328,6 @@ class Engine {
 
     // Base XP: time-based (with the mid-session stamina debuff applied inside
     // xpForFocus) plus the set bonus, lifted by the consistency multiplier.
-    final timeXp = gm.xpForFocus(
-      elapsedFocusMs: elapsedFocusMs,
-      staminaAtSessionStart: staminaAtSessionStart,
-      level: s.level,
-      focusDurationMs: focusDurationMs,
-    );
     final setBonus = completedSet ? gm.kXpSetBonus : 0;
     final baseXp = ((timeXp + setBonus) * mult).round();
 

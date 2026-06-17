@@ -93,6 +93,8 @@ void main() {
       // The 3-hour pause fully recovered the bar; the final 15-min segment then
       // drains 30% (15 of 25 min × 50%).
       expect(s.stamina, closeTo(70, 1e-9));
+      expect(s.xpIntoLevel, 11);
+      expect(s.pendingReveal?.xpGained, 11);
     });
 
     test('pausing while paused or idle is a no-op', () {

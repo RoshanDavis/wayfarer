@@ -149,7 +149,10 @@ class _HomeScreenState extends State<HomeScreen> {
             // the background colour.
             SliverToBoxAdapter(
                 child: _JourneyBody(
-                    state: s, stamina: controller.displayStamina())),
+              state: s,
+              stamina: controller.displayStamina(),
+              controller: controller,
+            )),
           ],
         ),
         // The single control floats over the world. It rests near the ground,
@@ -565,7 +568,12 @@ class _LinkFor extends StatelessWidget {
 class _JourneyBody extends StatelessWidget {
   final GameState state;
   final double stamina;
-  const _JourneyBody({required this.state, required this.stamina});
+  final AppController controller;
+  const _JourneyBody({
+    required this.state,
+    required this.stamina,
+    required this.controller,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -600,7 +608,7 @@ class _JourneyBody extends StatelessWidget {
                 const SizedBox(height: 48),
                 _ProgressSection(state: state, stamina: stamina),
                 const SizedBox(height: 48),
-                _StatsSection(state: state),
+                _StatsSection(state: state, controller: controller),
                 const SizedBox(height: 48),
                 // Markers close the Journey — the collection earned along it.
                 _MarkersSection(badgeIds: state.badgeIds),
@@ -720,7 +728,8 @@ class _MarkersSection extends StatelessWidget {
 
 class _StatsSection extends StatelessWidget {
   final GameState state;
-  const _StatsSection({required this.state});
+  final AppController controller;
+  const _StatsSection({required this.state, required this.controller});
 
   @override
   Widget build(BuildContext context) {
@@ -748,7 +757,7 @@ class _StatsSection extends StatelessWidget {
           // so an empty chart stays quiet. Same window the chart draws.
           final pct = (gm.consistencyBonusFraction(activeDaysInWindow(
                       state.dailyFocusMinutes,
-                      DateTime.now().millisecondsSinceEpoch)) *
+                      controller.nowMs)) *
                   100)
               .round();
           if (pct <= 0) return const SizedBox.shrink();
