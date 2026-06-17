@@ -36,7 +36,7 @@ void _ensureDitherTile(VoidCallback onReady) {
     px[i * 4] = v;
     px[i * 4 + 1] = v;
     px[i * 4 + 2] = v;
-    px[i * 4 + 3] = 255;
+    px[i * 4 + 3] = 225; // Lower opacity (alpha) to keep the dither extremely subtle
   }
   ui.decodeImageFromPixels(px, n, n, ui.PixelFormat.rgba8888, (img) {
     _ditherTile = img;

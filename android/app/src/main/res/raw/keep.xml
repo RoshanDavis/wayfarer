@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Release builds run R8 with resource shrinking enabled. These two resources
+    are referenced only by name from Dart (the notification small icon via
+    AndroidInitializationSettings('ic_stat_wayfarer'), and the completion chime
+    via RawResourceAndroidNotificationSound('session_chime')). The shrinker
+    scans Java/Kotlin/XML, not the Dart string table, so it cannot see those
+    references and strips both — which made flutter_local_notifications.initialize
+    throw "invalid_icon" in release, silently aborting all notification setup
+    (no channel, no permission prompt, no alerts, no vibration). Keeping them
+    explicitly is the documented fix for resources resolved by name at runtime.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_wayfarer,@raw/session_chime" />

@@ -9,6 +9,8 @@
 /// under Do Not Disturb.
 library;
 
+import 'dart:typed_data';
+
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
@@ -21,11 +23,13 @@ class NotificationService {
   /// Android has created it, so a new id is the only way installs that already
   /// had the old (silent, no-vibration) 'session_end' channel pick up the chime
   /// and vibration. The legacy channel is deleted in [init].
-  static const String _channelId = 'session_end_v2';
-  static const String _legacyChannelId = 'session_end';
+  static const String _channelId = 'session_end_v4';
   static const String _channelName = 'Session complete';
   static const String _channelDescription =
       'Announces when a focus session or break finishes. Nothing else.';
+
+  static final Int64List _vibrationPattern =
+      Int64List.fromList([0, 500, 250, 500]);
 
   /// The bundled chime (res/raw/session_chime.wav) — the same tone the app
   /// plays in the foreground, produced by tool/generate_chime.dart.
@@ -56,12 +60,12 @@ class NotificationService {
     );
     try {
       await _plugin.initialize(settings);
-      // Drop the legacy channel (locked to no custom sound and no vibration)
-      // and create the current one with the chime and vibration. Both calls are
-      // idempotent and preserve any later user customisation of session_end_v2.
-      await _android?.deleteNotificationChannel(_legacyChannelId);
+      // Drop legacy channels to clear cached Android configuration (no sound, no vibration)
+      await _android?.deleteNotificationChannel('session_end');
+      await _android?.deleteNotificationChannel('session_end_v2');
+      await _android?.deleteNotificationChannel('session_end_v3');
       await _android?.createNotificationChannel(
-        const AndroidNotificationChannel(
+        AndroidNotificationChannel(
           _channelId,
           _channelName,
           description: _channelDescription,
@@ -69,6 +73,7 @@ class NotificationService {
           playSound: true,
           sound: _sound,
           enableVibration: true,
+          vibrationPattern: _vibrationPattern,
         ),
       );
       _ready = true;
@@ -115,7 +120,7 @@ class NotificationService {
     required String body,
   }) async {
     if (!_ready) return;
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: AndroidNotificationDetails(
         _channelId,
         _channelName,
@@ -125,6 +130,7 @@ class NotificationService {
         playSound: true,
         sound: _sound,
         enableVibration: true,
+        vibrationPattern: _vibrationPattern,
       ),
     );
     final when =
@@ -149,6 +155,34 @@ class NotificationService {
     if (!_ready) return;
     try {
       await _plugin.cancel(phaseEndId);
+    } catch (_) {}
+  }
+
+  Future<void> showSessionActive({
+    required String title,
+    required String body,
+  }) async {
+    if (!_ready) return;
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDescription,
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: false,
+        enableVibration: false,
+        ongoing: true,
+        autoCancel: false,
+      ),
+    );
+    try {
+      await _plugin.show(
+        phaseEndId,
+        title,
+        body,
+        details,
+      );
     } catch (_) {}
   }
 }

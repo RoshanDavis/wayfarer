@@ -6,7 +6,7 @@ library;
 import 'dart:async';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../core/game_math.dart' as gm;
 import '../core/models.dart';
@@ -21,9 +21,6 @@ class AppController extends ChangeNotifier {
     required this._notifications,
     required this._chime,
   }) {
-    // Read before the reconstruct below writes a snapshot — distinguishes a
-    // genuine first run from a returning user.
-    final firstRun = !_persistence.hasSave;
     _state = _persistence.load();
     // Reconstruct at launch: phases that completed while the app was dead
     // resolve now (the scheduled notification already announced them).
@@ -33,7 +30,7 @@ class AppController extends ChangeNotifier {
       unawaited(_persistence.save(next));
     }
     _syncTicker();
-    unawaited(_initNotifications(firstRun: firstRun));
+    unawaited(_initNotifications());
   }
 
   final Persistence _persistence;
@@ -67,6 +64,8 @@ class AppController extends ChangeNotifier {
   /// true state from wall-clock timestamps.
   void onAppResumed() {
     _foreground = true;
+    // Cancel the ongoing notification when returning to the app, clearing it from the tray
+    unawaited(_notifications.cancelPhaseEnd());
     // The user may have flipped the OS permission while away (e.g. via the
     // settings deep-link); re-read it so the hint stays accurate.
     unawaited(_refreshNotificationPermission());
@@ -76,6 +75,8 @@ class AppController extends ChangeNotifier {
       _apply(next);
     } else {
       _syncTicker();
+      // Reschedule the notification since we cancelled it
+      _schedulePhaseEndNotification(_state);
       notifyListeners();
     }
   }
@@ -87,6 +88,7 @@ class AppController extends ChangeNotifier {
     // Save the latest (e.g. idle-recovered) stamina. Re-derivable from the sync
     // point regardless, but persisting keeps the on-disk snapshot current.
     unawaited(_persistence.save(_state));
+    _showSessionActiveNotification();
   }
 
   // ---------------------------------------------------------------------
@@ -333,30 +335,52 @@ class AppController extends ChangeNotifier {
     ));
   }
 
+  void _showSessionActiveNotification() {
+    if (!_state.settings.notificationsEnabled) return;
+    final t = _state.timer;
+    if (t.phaseEndsAtMs == null) return;
+    final isFocus = t.phase == Phase.focusRunning;
+    if (!isFocus && t.phase != Phase.breakRunning) return;
+
+    final dt = DateTime.fromMillisecondsSinceEpoch(t.phaseEndsAtMs!).toLocal();
+    final hourVal = dt.hour;
+    final amPm = hourVal >= 12 ? 'PM' : 'AM';
+    final displayHour = hourVal == 0 ? 12 : (hourVal > 12 ? hourVal - 12 : hourVal);
+    final minuteStr = dt.minute.toString().padLeft(2, '0');
+    final timeStr = '$displayHour:$minuteStr $amPm';
+
+    unawaited(_notifications.showSessionActive(
+      title: isFocus ? 'Focus session active' : 'Break active',
+      body: isFocus ? 'Focusing until $timeStr.' : 'Resting until $timeStr.',
+    ));
+  }
+
   Future<void> _ensureNotificationPermission() async {
     if (!_state.settings.notificationsEnabled) return;
     _notificationsAuthorized = await _notifications.ensurePermission();
     notifyListeners();
   }
 
-  /// Notification setup at launch. On a genuine first run, ask for the
-  /// POST_NOTIFICATIONS permission up front (so the completion alert can fire
-  /// from the first session); if the user declines, switch the completion alert
-  /// off so the toggle reflects reality — it can be turned back on later, which
-  /// routes to system settings. On later runs, just re-read the live state.
-  Future<void> _initNotifications({required bool firstRun}) async {
-    if (!firstRun) {
-      await _refreshNotificationPermission();
-      return;
-    }
-    final granted = await _notifications.ensurePermission();
-    _notificationsAuthorized = granted;
-    if (!granted && _state.settings.notificationsEnabled) {
-      _state = _state.copyWith(
-          settings: _state.settings.copyWith(notificationsEnabled: false));
-      unawaited(_persistence.save(_state));
-    }
-    notifyListeners();
+  /// Notification setup at launch. If the user wants completion alerts but the
+  /// OS hasn't granted POST_NOTIFICATIONS yet, ask for it once the first frame
+  /// is up — this is what surfaces Android 13+'s permission dialog on a fresh
+  /// install. The request is a silent no-op once the user has already decided
+  /// (granted or denied), so it never nags and is safe to run every launch;
+  /// crucially it is *not* gated on a "first run" flag, which a stray save from
+  /// an aborted first launch could wrongly clear, permanently suppressing the
+  /// prompt. We never auto-disable the toggle on denial — the Settings "blocked"
+  /// hint and its system-settings deep link are the recovery path instead.
+  Future<void> _initNotifications() async {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // The OS only shows its permission dialog for a resumed, focused
+      // activity; a short settle keeps the request from being silently dropped
+      // during the launch transition on physical devices.
+      await Future.delayed(const Duration(milliseconds: 500));
+      _notificationsAuthorized = _state.settings.notificationsEnabled
+          ? await _notifications.ensurePermission()
+          : await _notifications.areEnabled();
+      notifyListeners();
+    });
   }
 
   /// Re-reads the OS permission state (e.g. after the user toggles it in system
