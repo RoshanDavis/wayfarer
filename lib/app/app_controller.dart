@@ -64,7 +64,10 @@ class AppController extends ChangeNotifier {
   /// true state from wall-clock timestamps.
   void onAppResumed() {
     _foreground = true;
-    // Cancel the ongoing notification when returning to the app, clearing it from the tray
+    // Clear the ongoing status banner, and suppress the scheduled completion
+    // alert while the app is open — the live in-app reveal announces the end.
+    // (onAppPaused re-schedules it if the user backgrounds again mid-session.)
+    unawaited(_notifications.cancelSessionActive());
     unawaited(_notifications.cancelPhaseEnd());
     // The user may have flipped the OS permission while away (e.g. via the
     // settings deep-link); re-read it so the hint stays accurate.
@@ -88,6 +91,11 @@ class AppController extends ChangeNotifier {
     // Save the latest (e.g. idle-recovered) stamina. Re-derivable from the sync
     // point regardless, but persisting keeps the on-disk snapshot current.
     unawaited(_persistence.save(_state));
+    // Backgrounding is the moment the completion alert matters most: (re)schedule
+    // it so it fires even if the alarm was never set this run (e.g. the app was
+    // cold-started mid-session). Idempotent — same id replaces. Then show the
+    // quiet ongoing status.
+    _schedulePhaseEndNotification(_state);
     _showSessionActiveNotification();
   }
 
@@ -196,6 +204,7 @@ class AppController extends ChangeNotifier {
         settings: _state.settings.copyWith(notificationsEnabled: enabled)));
     if (!enabled) {
       unawaited(_notifications.cancelPhaseEnd());
+      unawaited(_notifications.cancelSessionActive());
       return;
     }
     // Enabling is the natural moment to ask: the OS shows its permission dialog
@@ -208,6 +217,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> resetData() async {
     await _notifications.cancelPhaseEnd();
+    await _notifications.cancelSessionActive();
     await _persistence.reset();
     _state = GameState.initial;
     _syncTicker();
@@ -352,6 +362,7 @@ class AppController extends ChangeNotifier {
     unawaited(_notifications.showSessionActive(
       title: isFocus ? 'Focus session active' : 'Break active',
       body: isFocus ? 'Focusing until $timeStr.' : 'Resting until $timeStr.',
+      timeoutAfterMs: t.phaseEndsAtMs! - nowMs,
     ));
   }
 

@@ -269,7 +269,7 @@ class Settings {
 
   const Settings({
     this.theme = ThemePreference.system,
-    this.soundEnabled = false,
+    this.soundEnabled = true,
     this.notificationsEnabled = true,
     this.focusMinutes = gm.kFocusMinutes,
     this.shortBreakMinutes = gm.kShortBreakMinutes,
@@ -309,7 +309,7 @@ class Settings {
   factory Settings.fromJson(Map<String, Object?> json) => Settings(
         theme: ThemePreference.values
             .byName(json['theme'] as String? ?? 'system'),
-        soundEnabled: json['soundEnabled'] as bool? ?? false,
+        soundEnabled: json['soundEnabled'] as bool? ?? true,
         notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
         focusMinutes: json['focusMinutes'] as int? ?? gm.kFocusMinutes,
         shortBreakMinutes:

@@ -158,8 +158,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 30),
                     _ToggleRow(
-                      label: 'Completion alert',
-                      detail: 'A notification when a session or break ends.',
+                      label: 'Notifications',
+                      detail: 'A quiet status while a session runs, and an '
+                          'alert when it ends.',
                       value: settings.notificationsEnabled,
                       onChanged: controller.setNotificationsEnabled,
                     ),
