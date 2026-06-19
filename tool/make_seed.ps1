@@ -25,7 +25,7 @@ function BaseState {
         }
         pendingReveal = $null
         settings = [ordered]@{
-            theme = $script:Theme; soundEnabled = $false; notificationsEnabled = $true
+            theme = $script:Theme; notificationsEnabled = $true
         }
     }
     foreach ($k in $Overrides.Keys) { $state[$k] = $Overrides[$k] }

@@ -490,7 +490,6 @@ void main() {
         dailyFocusMinutes: {'2026-06-01': 50},
         settings: const Settings(
             theme: ThemePreference.dark,
-            soundEnabled: true,
             notificationsEnabled: false,
             focusMinutes: 40,
             shortBreakMinutes: 8,
@@ -507,7 +506,6 @@ void main() {
       expect(restored.badgeIds, s.badgeIds);
       expect(restored.dailyFocusMinutes, s.dailyFocusMinutes);
       expect(restored.settings.theme, ThemePreference.dark);
-      expect(restored.settings.soundEnabled, isTrue);
       expect(restored.settings.notificationsEnabled, isFalse);
       expect(restored.settings.focusMinutes, 40);
       expect(restored.settings.shortBreakMinutes, 8);

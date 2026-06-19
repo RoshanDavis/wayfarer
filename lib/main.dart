@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app/app_controller.dart';
-import 'app/audio.dart';
 import 'app/notifications.dart';
 import 'app/theme.dart';
 import 'core/maps.dart';
@@ -26,7 +25,6 @@ Future<void> main() async {
   final controller = AppController(
     persistence: persistence,
     notifications: notifications,
-    chime: ChimePlayer(),
   );
   runApp(WayfarerApp(controller: controller));
 }

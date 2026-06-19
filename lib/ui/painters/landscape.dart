@@ -496,17 +496,34 @@ class _ScenePainter extends CustomPainter {
     return [for (final v in base) (v * steps).floor() / steps];
   }
 
-  /// A high coastal plateau dropping to the sea.
+  /// A coastal range of headlands and inlets dropping to the sea. Several drops
+  /// of varied position, width and depth — over finer upland relief — so the
+  /// shore reads as a living coastline rather than one cliff face looping past
+  /// as the scene scrolls. The carved inlets stay in the interior so both ends
+  /// remain upland and the profile still tiles seamlessly (see [_layerPath]).
   List<double> _plateau(math.Random rng, int n) {
-    final top = _smoothNoise(rng, n, maxF: 3);
-    final edge = 0.42 + rng.nextDouble() * 0.1;
+    final top = _smoothNoise(rng, n, maxF: 5); // finer upland relief
+    final inletCount = 3 + rng.nextInt(2); // 3–4 inlets
+    final inlets = [
+      for (var k = 0; k < inletCount; k++)
+        (
+          // Interior centres only, so u≈0 and u≈1 stay upland → seamless tile.
+          center: 0.18 + rng.nextDouble() * 0.64,
+          halfWidth: 0.04 + rng.nextDouble() * 0.06,
+          depth: 0.5 + rng.nextDouble() * 0.45,
+        ),
+    ];
     return List.generate(n, (i) {
       final u = i / n;
-      // Smooth, slightly eroded cliff face between plateau and sea.
-      final mask = 1 - _smoothstep(edge - 0.025, edge + 0.025, u);
-      final rise = _smoothstep(0.93, 0.99, u); // wraps back up for tiling
-      final m = math.max(mask, rise);
-      return (0.55 + top[i] * 0.45) * m;
+      var land = 0.55 + top[i] * 0.45; // undulating upland
+      for (final inlet in inlets) {
+        // A smooth notch dropping the shore toward the sea around the inlet.
+        final d = (u - inlet.center).abs();
+        final cut =
+            1 - _smoothstep(inlet.halfWidth - 0.02, inlet.halfWidth + 0.02, d);
+        land *= 1 - inlet.depth * cut;
+      }
+      return land.clamp(0.0, 1.0);
     });
   }
 
@@ -531,14 +548,18 @@ class _ScenePainter extends CustomPainter {
   void _addStalks(Path path, math.Random rng, double w, double h,
       _LayerSpec spec, {required bool dense}) {
     final count = dense ? 9 : 6;
-    for (var rep = 0; rep < 2; rep++) {
-      for (var i = 0; i < count; i++) {
-        final x = (i + 0.2 + rng.nextDouble() * 0.6) / count * w + rep * w;
-        final stalkW = h * (0.006 + rng.nextDouble() * 0.007);
-        final stalkH = h * (0.10 + rng.nextDouble() * 0.13);
-        final baseY = h * (spec.baseline + 0.01);
+    final baseY = h * (spec.baseline + 0.01);
+    for (var i = 0; i < count; i++) {
+      // Draw each stalk's randoms once, then place an identical copy in both
+      // tiles (x and x + w). The layer path spans 2× width and scrolls with a
+      // wrap at w, so the two tiles must match exactly — otherwise the grove
+      // visibly snaps to a new arrangement each time the scroll wraps.
+      final x = (i + 0.2 + rng.nextDouble() * 0.6) / count * w;
+      final stalkW = h * (0.006 + rng.nextDouble() * 0.007);
+      final stalkH = h * (0.10 + rng.nextDouble() * 0.13);
+      for (var rep = 0; rep < 2; rep++) {
         path.addRRect(RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, baseY - stalkH, stalkW, stalkH),
+          Rect.fromLTWH(x + rep * w, baseY - stalkH, stalkW, stalkH),
           Radius.circular(stalkW),
         ));
       }
