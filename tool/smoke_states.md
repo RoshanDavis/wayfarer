@@ -18,7 +18,7 @@ Placeholders: `{NOW}` = current epoch ms; arithmetic offsets in ms.
 
 4. Map/theme spot checks (idle states): the map now advances every level
    (mapIndexForLevel = (level-1) % 25), so set `-Level` to pick a map:
-   2 (Golden Plains), 4 (Pine Ridge), 6 (Canyon), 12 (Fjords),
+   2 (Prairie), 4 (Pine Ridge), 6 (Canyon), 12 (Fjords),
    18 (Volcanic Fields), 22 (Night Desert), 24 (The Stratosphere),
    25 (Maple Wood); settings.theme=dark for dark-ramp variants. Note: level
    now drives both the map and the gait.

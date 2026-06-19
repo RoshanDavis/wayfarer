@@ -51,8 +51,9 @@ class NotificationService {
   static final Int64List _vibrationPattern =
       Int64List.fromList([0, 500, 250, 500]);
 
-  /// The bundled chime (res/raw/session_chime.wav) — the same tone the app
-  /// plays in the foreground, produced by tool/generate_chime.dart.
+  /// The bundled completion chime (res/raw/session_chime.wav), produced by
+  /// tool/generate_chime.dart. It plays via this notification's channel — the
+  /// app ships no in-app audio, so the alert is the only session-end sound.
   static const AndroidNotificationSound _sound =
       RawResourceAndroidNotificationSound('session_chime');
 
@@ -144,25 +145,31 @@ class NotificationService {
     } catch (_) {}
   }
 
+  /// The shared presentation for the completion alert — high importance, the
+  /// bundled chime, and the ringer-following vibration. Used both when the alert
+  /// is scheduled ([schedulePhaseEnd]) and when it is posted live in the
+  /// foreground ([showPhaseEnd]), so the two paths stay identical.
+  NotificationDetails get _phaseEndDetails => NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          _channelName,
+          channelDescription: _channelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+          sound: _sound,
+          enableVibration: true,
+          vibrationPattern: _vibrationPattern,
+        ),
+      );
+
   Future<void> schedulePhaseEnd({
     required int atMs,
     required String title,
     required String body,
   }) async {
     if (!_ready) return;
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        _channelId,
-        _channelName,
-        channelDescription: _channelDescription,
-        importance: Importance.high,
-        priority: Priority.high,
-        playSound: true,
-        sound: _sound,
-        enableVibration: true,
-        vibrationPattern: _vibrationPattern,
-      ),
-    );
+    final details = _phaseEndDetails;
     final when =
         tz.TZDateTime.fromMillisecondsSinceEpoch(tz.UTC, atMs + graceMs);
     try {
@@ -178,6 +185,20 @@ class NotificationService {
         details,
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );
+    } catch (_) {}
+  }
+
+  /// Posts the completion alert immediately — used when a phase ends while the
+  /// app is foregrounded, so the same heads-up banner, chime and vibration fire
+  /// as when it ends in the background. Shares [phaseEndId] with the scheduled
+  /// alert, so cancel that first ([cancelPhaseEnd]) to avoid a duplicate.
+  Future<void> showPhaseEnd({
+    required String title,
+    required String body,
+  }) async {
+    if (!_ready) return;
+    try {
+      await _plugin.show(phaseEndId, title, body, _phaseEndDetails);
     } catch (_) {}
   }
 

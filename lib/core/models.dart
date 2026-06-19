@@ -259,7 +259,6 @@ enum ThemePreference { system, light, dark }
 
 class Settings {
   final ThemePreference theme;
-  final bool soundEnabled;
   final bool notificationsEnabled;
 
   /// User-configurable pomodoro durations, in minutes.
@@ -269,7 +268,6 @@ class Settings {
 
   const Settings({
     this.theme = ThemePreference.system,
-    this.soundEnabled = true,
     this.notificationsEnabled = true,
     this.focusMinutes = gm.kFocusMinutes,
     this.shortBreakMinutes = gm.kShortBreakMinutes,
@@ -282,7 +280,6 @@ class Settings {
 
   Settings copyWith({
     ThemePreference? theme,
-    bool? soundEnabled,
     bool? notificationsEnabled,
     int? focusMinutes,
     int? shortBreakMinutes,
@@ -290,7 +287,6 @@ class Settings {
   }) =>
       Settings(
         theme: theme ?? this.theme,
-        soundEnabled: soundEnabled ?? this.soundEnabled,
         notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
         focusMinutes: focusMinutes ?? this.focusMinutes,
         shortBreakMinutes: shortBreakMinutes ?? this.shortBreakMinutes,
@@ -299,7 +295,6 @@ class Settings {
 
   Map<String, Object?> toJson() => {
         'theme': theme.name,
-        'soundEnabled': soundEnabled,
         'notificationsEnabled': notificationsEnabled,
         'focusMinutes': focusMinutes,
         'shortBreakMinutes': shortBreakMinutes,
@@ -309,7 +304,6 @@ class Settings {
   factory Settings.fromJson(Map<String, Object?> json) => Settings(
         theme: ThemePreference.values
             .byName(json['theme'] as String? ?? 'system'),
-        soundEnabled: json['soundEnabled'] as bool? ?? true,
         notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
         focusMinutes: json['focusMinutes'] as int? ?? gm.kFocusMinutes,
         shortBreakMinutes:

@@ -151,13 +151,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: 40),
 
                     _ToggleRow(
-                      label: 'Sound',
-                      detail: 'One soft chime when a session ends.',
-                      value: settings.soundEnabled,
-                      onChanged: controller.setSoundEnabled,
-                    ),
-                    const SizedBox(height: 30),
-                    _ToggleRow(
                       label: 'Notifications',
                       detail: 'A quiet status while a session runs, and an '
                           'alert when it ends.',

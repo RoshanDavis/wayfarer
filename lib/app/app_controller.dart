@@ -1,6 +1,6 @@
 /// The single source of app state: owns the persisted [GameState], applies
 /// engine transitions, keeps the wall-clock ticker, and performs the side
-/// effects (persistence, notifications, chime).
+/// effects (persistence, notifications).
 library;
 
 import 'dart:async';
@@ -12,14 +12,12 @@ import '../core/game_math.dart' as gm;
 import '../core/models.dart';
 import '../core/session_engine.dart';
 import '../data/persistence.dart';
-import 'audio.dart';
 import 'notifications.dart';
 
 class AppController extends ChangeNotifier {
   AppController({
     required this._persistence,
     required this._notifications,
-    required this._chime,
   }) {
     _state = _persistence.load();
     // Reconstruct at launch: phases that completed while the app was dead
@@ -30,12 +28,14 @@ class AppController extends ChangeNotifier {
       unawaited(_persistence.save(next));
     }
     _syncTicker();
+    // If the app cold-started mid-session, surface the ongoing status now (it
+    // shows in the foreground too, not only when backgrounded).
+    _syncSessionActiveNotification();
     unawaited(_initNotifications());
   }
 
   final Persistence _persistence;
   final NotificationService _notifications;
-  final ChimePlayer _chime;
 
   late GameState _state;
   GameState get state => _state;
@@ -64,10 +64,10 @@ class AppController extends ChangeNotifier {
   /// true state from wall-clock timestamps.
   void onAppResumed() {
     _foreground = true;
-    // Clear the ongoing status banner, and suppress the scheduled completion
-    // alert while the app is open — the live in-app reveal announces the end.
-    // (onAppPaused re-schedules it if the user backgrounds again mid-session.)
-    unawaited(_notifications.cancelSessionActive());
+    // Drop the pending scheduled alarm: while the app is open the live tick
+    // posts the completion alert itself, so the scheduled one must not also
+    // fire after its grace window. (onAppPaused re-schedules it on the way out.)
+    // The ongoing status is left up — it shows in the foreground too now.
     unawaited(_notifications.cancelPhaseEnd());
     // The user may have flipped the OS permission while away (e.g. via the
     // settings deep-link); re-read it so the hint stays accurate.
@@ -78,8 +78,9 @@ class AppController extends ChangeNotifier {
       _apply(next);
     } else {
       _syncTicker();
-      // Reschedule the notification since we cancelled it
+      // Reschedule the alarm we just cancelled, and keep the ongoing status up.
       _schedulePhaseEndNotification(_state);
+      _syncSessionActiveNotification();
       notifyListeners();
     }
   }
@@ -169,11 +170,6 @@ class AppController extends ChangeNotifier {
   void setTheme(ThemePreference theme) {
     _apply(_state.copyWith(
         settings: _state.settings.copyWith(theme: theme)));
-  }
-
-  void setSoundEnabled(bool enabled) {
-    _apply(_state.copyWith(
-        settings: _state.settings.copyWith(soundEnabled: enabled)));
   }
 
   /// Updates the configured pomodoro durations (minutes), clamped to bounds.
@@ -271,6 +267,7 @@ class AppController extends ChangeNotifier {
     _state = next;
     unawaited(_persistence.save(next));
     _syncTicker();
+    _syncSessionActiveNotification();
     notifyListeners();
   }
 
@@ -318,13 +315,13 @@ class AppController extends ChangeNotifier {
       return;
     }
     if (nowMs >= t.phaseEndsAtMs!) {
-      // Live completion: cancel the scheduled banner inside its grace
-      // window — the in-app reveal (and optional chime) announces it.
+      // Live completion with the app open. Drop the pending scheduled alarm
+      // (so it can't double-fire after its grace window), then post the
+      // completion alert live so its banner + chime appear in the foreground
+      // too — alongside the in-app reveal.
       unawaited(_notifications.cancelPhaseEnd());
+      _showPhaseEndNotificationNow(_state);
       _apply(Engine.reconstruct(_state, nowMs));
-      if (_state.settings.soundEnabled) {
-        unawaited(_chime.play());
-      }
     } else {
       notifyListeners(); // countdown repaint
     }
@@ -363,6 +360,36 @@ class AppController extends ChangeNotifier {
       title: isFocus ? 'Focus session active' : 'Break active',
       body: isFocus ? 'Focusing until $timeStr.' : 'Resting until $timeStr.',
       timeoutAfterMs: t.phaseEndsAtMs! - nowMs,
+    ));
+  }
+
+  /// Keeps the quiet, ongoing "session in progress" status in sync with the
+  /// phase: shown whenever a focus or break is running — in the foreground as
+  /// well as the background — and cleared otherwise. Driven from [_apply] (every
+  /// transition), launch, and resume.
+  void _syncSessionActiveNotification() {
+    final phase = _state.timer.phase;
+    if (phase == Phase.focusRunning || phase == Phase.breakRunning) {
+      _showSessionActiveNotification();
+    } else {
+      unawaited(_notifications.cancelSessionActive());
+    }
+  }
+
+  /// Posts the completion alert immediately when a phase ends while the app is
+  /// open, so the banner and chime fire in the foreground just as they do in
+  /// the background. Read [s] before reconstruct, while the phase is still
+  /// running, so the wording matches the phase that is ending.
+  void _showPhaseEndNotificationNow(GameState s) {
+    if (!s.settings.notificationsEnabled || !_notificationsAuthorized) return;
+    final t = s.timer;
+    final isFocus = t.phase == Phase.focusRunning;
+    if (!isFocus && t.phase != Phase.breakRunning) return;
+    unawaited(_notifications.showPhaseEnd(
+      title: isFocus ? 'Focus complete' : 'Break over',
+      body: isFocus
+          ? 'The road carried you onward. Time to rest.'
+          : 'The road waits, whenever you are ready.',
     ));
   }
 
@@ -412,7 +439,6 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _ticker?.cancel();
-    _chime.dispose();
     super.dispose();
   }
 }
