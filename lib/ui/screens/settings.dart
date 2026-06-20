@@ -74,21 +74,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Centered title with a back chevron at the left.
-            SizedBox(
-              height: 48,
-              child: Stack(
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: QuietLink(
-                        label: '‹  Back',
-                        onTap: () => Navigator.of(context).maybePop()),
-                  ),
-                  Center(
-                    child: Text('SETTINGS', style: Type.label(p, size: 12)),
-                  ),
-                ],
+            // Centered title with a back chevron at the left. The +8 top pad
+            // drops the title's line-top to topInset + 26 (SafeArea inset + 8 +
+            // the 18px centring slack), matching the Focus header on home so the
+            // two titles line up when navigating between the screens.
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: SizedBox(
+                height: 48,
+                child: Stack(
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: QuietLink(
+                          label: '‹  Back',
+                          onTap: () => Navigator.of(context).maybePop()),
+                    ),
+                    Center(
+                      child: Text('SETTINGS', style: Type.label(p, size: 12)),
+                    ),
+                  ],
+                ),
               ),
             ),
             Expanded(
