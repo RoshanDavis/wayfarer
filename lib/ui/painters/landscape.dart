@@ -33,6 +33,11 @@ final Float64List _ditherMatrix = Float64List.fromList(const <double>[
   0, 0, 0, 1,
 ]);
 
+// The dither tile shader is size- and palette-independent (a repeated tile under
+// the constant identity matrix), so build it once when the tile loads and reuse
+// it everywhere rather than allocating a fresh ImageShader on every paint.
+ui.ImageShader? _ditherShader;
+
 void _ensureDitherTile(VoidCallback onReady) {
   if (_ditherTile != null || _ditherRequested) return;
   _ditherRequested = true;
@@ -49,6 +54,8 @@ void _ensureDitherTile(VoidCallback onReady) {
   }
   ui.decodeImageFromPixels(px, n, n, ui.PixelFormat.rgba8888, (img) {
     _ditherTile = img;
+    _ditherShader =
+        ui.ImageShader(img, TileMode.repeated, TileMode.repeated, _ditherMatrix);
     onReady();
   });
 }
@@ -146,12 +153,20 @@ class _LandscapeViewState extends State<LandscapeView>
   void dispose() {
     _ticker.dispose();
     _frame.dispose();
+    _bg?.dispose();
     super.dispose();
   }
 
   // Geometry cache, held per view so coexisting scenes never thrash it.
   _Geometry? _geo;
   int _geoKey = 0;
+
+  // The static background (sky gradient + dither + night-sky stars) recorded as a
+  // picture, so the drift ticker replays it each frame instead of re-rasterizing
+  // a full-screen gradient and overlay blend 60 times a second. Rebuilt only when
+  // the size or palette changes; the moving layers are drawn fresh on top.
+  ui.Picture? _bg;
+  int _bgKey = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -239,38 +254,18 @@ class _ScenePainter extends CustomPainter {
     }
     final geo = state._geo!;
 
-    // Sky — the one permitted subtle vertical gradient.
-    final skyPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [palette.sky, palette.skyLow],
-        stops: const [0.0, 0.78],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, skyPaint);
-
-    // Dither the sky to smooth the gradient's 8-bit banding. Drawn before the
-    // mountains, so only the open sky carries it; the silhouettes paint over.
-    final dither = _ditherTile;
-    if (dither != null) {
-      canvas.drawRect(
-        Offset.zero & size,
-        Paint()
-          ..blendMode = BlendMode.overlay
-          ..shader = ui.ImageShader(
-              dither, TileMode.repeated, TileMode.repeated, _ditherMatrix),
-      );
+    // The static background (sky gradient + dither + night-sky stars) never
+    // changes between frames — only the parallax layers move — so record it once
+    // and replay it, instead of re-rasterizing a full-screen gradient and an
+    // overlay blend 60 times a second while the scene drifts. Rebuilt only when
+    // the geometry (size/map/seed), palette/theme, or dither availability change.
+    final bgKey = Object.hash(state._geoKey, palette, _ditherTile != null);
+    if (state._bg == null || state._bgKey != bgKey) {
+      state._bg?.dispose();
+      state._bg = _recordBackground(size, geo);
+      state._bgKey = bgKey;
     }
-
-    // Dark mode: a stationary scatter of stars across the night sky, sitting
-    // behind the mountains. Tones of the (light-in-dark) ink, so they read as
-    // pale stars over the deep background.
-    if (palette.brightness == Brightness.dark) {
-      for (final s in geo.bgStars) {
-        canvas.drawCircle(Offset(s.x, s.y), s.size,
-            Paint()..color = palette.ink.withValues(alpha: 0.3 + 0.45 * s.phase));
-      }
-    }
+    canvas.drawPicture(state._bg!);
 
     // Speed-lines: at extreme tiers the world itself conveys velocity.
     if (tierIndex >= 7 && state._velocity > 1 && animate) {
@@ -302,6 +297,50 @@ class _ScenePainter extends CustomPainter {
       canvas.drawPath(geo.layerPaths[i], Paint()..color = layerColors[i]);
       canvas.restore();
     }
+  }
+
+  /// Records the unchanging background — sky gradient, dither overlay, and the
+  /// stationary dark-mode starfield — into a [ui.Picture] for cheap replay each
+  /// frame. The moving parallax layers are drawn separately on top.
+  ui.Picture _recordBackground(Size size, _Geometry geo) {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Offset.zero & size);
+
+    // Sky — the one permitted subtle vertical gradient.
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [palette.sky, palette.skyLow],
+          stops: const [0.0, 0.78],
+        ).createShader(Offset.zero & size),
+    );
+
+    // Dither the sky to smooth the gradient's 8-bit banding. Drawn before the
+    // mountains, so only the open sky carries it; the silhouettes paint over.
+    final ditherShader = _ditherShader;
+    if (ditherShader != null) {
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()
+          ..blendMode = BlendMode.overlay
+          ..shader = ditherShader,
+      );
+    }
+
+    // Dark mode: a stationary scatter of stars across the night sky, sitting
+    // behind the mountains. Tones of the (light-in-dark) ink, so they read as
+    // pale stars over the deep background.
+    if (palette.brightness == Brightness.dark) {
+      for (final s in geo.bgStars) {
+        canvas.drawCircle(Offset(s.x, s.y), s.size,
+            Paint()..color = palette.ink.withValues(alpha: 0.3 + 0.45 * s.phase));
+      }
+    }
+
+    return recorder.endRecording();
   }
 
 

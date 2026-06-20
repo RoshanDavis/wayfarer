@@ -86,18 +86,24 @@ class _HomeScreenState extends State<HomeScreen> {
     final phase = s.timer.phase;
     final tier = tierForLevel(s.level);
 
-    final media = MediaQuery.of(context);
-    final topInset = media.viewPadding.top;
-    final screenH = media.size.height;
+    // Read only the MediaQuery aspects we use, so HomeScreen doesn't rebuild on
+    // unrelated metric changes (it rebuilds often via the controller already).
+    final topInset = MediaQuery.viewPaddingOf(context).top;
+    final screenH = MediaQuery.sizeOf(context).height;
     // 240 (not 232) gives the header enough slack for the countdown numeral at
     // its max size on wider/tablet screens, where it would otherwise overflow
     // the fixed header by ~1px. Imperceptible on phones (see-through lower edge).
     final headerHeight = topInset + 240;
     _panelHeight = screenH - headerHeight;
-    final reduceMotion = media.disableAnimations;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _maybeAutoScroll(phase));
+    // Only schedule the post-frame auto-scroll when the phase actually changed —
+    // _maybeAutoScroll is a no-op otherwise, so registering a closure on every
+    // (frequent) rebuild is wasted work.
+    if (phase != _prevPhase) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _maybeAutoScroll(phase));
+    }
 
     return Stack(
       fit: StackFit.expand,
@@ -141,6 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 controller: controller,
                 palette: p,
                 scroll: _scroll,
+                displayMs: _displayMs(controller, s),
               ),
             ),
             // First-screen spacer: an empty pane that lets the fixed world
@@ -253,6 +260,12 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
   final Palette palette;
   final ScrollController scroll;
 
+  /// The countdown ms to show this build. Carried as a field (not just computed
+  /// in [build]) so [shouldRebuild] can detect the per-second change: the state
+  /// object is unchanged while a phase runs, so without this the pinned header
+  /// would cache its first frame and the countdown would freeze.
+  final int displayMs;
+
   _HeaderDelegate({
     required this.height,
     required this.topInset,
@@ -261,6 +274,7 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.controller,
     required this.palette,
     required this.scroll,
+    required this.displayMs,
   });
 
   @override
@@ -285,7 +299,7 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
           SetDots(completed: s.sessionIndexInSet),
           const SizedBox(height: 18),
           _Countdown(
-            ms: _displayMs(controller, s),
+            ms: displayMs,
             dimmed: phase == Phase.focusPaused,
           ),
           const SizedBox(height: 10),
@@ -328,6 +342,7 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(_HeaderDelegate old) =>
       old.state != state ||
+      old.displayMs != displayMs ||
       old.palette != palette ||
       old.height != height ||
       old.panelHeight != panelHeight;

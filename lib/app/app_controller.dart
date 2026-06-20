@@ -89,6 +89,7 @@ class AppController extends ChangeNotifier {
     _foreground = false;
     _ticker?.cancel();
     _ticker = null;
+    _tickerInterval = null;
     // Save the latest (e.g. idle-recovered) stamina. Re-derivable from the sync
     // point regardless, but persisting keeps the on-disk snapshot current.
     unawaited(_persistence.save(_state));
@@ -271,24 +272,40 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// A 1 Hz wall-clock check while a phase is running and the app is
-  /// foregrounded — purely for live countdown display and live completion.
-  /// Correctness never depends on it; reconstruction covers every gap.
+  /// 1 Hz while a phase is running (live countdown/completion); a calmer 0.2 Hz
+  /// while only stamina is recovering between sessions. Correctness never depends
+  /// on the ticker — reconstruction covers every gap.
+  static const Duration _runningTickInterval = Duration(seconds: 1);
+  static const Duration _recoveryTickInterval = Duration(seconds: 5);
+
+  /// The period of the currently active [_ticker], or null when it is stopped —
+  /// kept in lockstep with [_ticker] so [_syncTicker] only rebuilds the timer
+  /// when the required cadence actually changes.
+  Duration? _tickerInterval;
+
   void _syncTicker() {
     final phase = _state.timer.phase;
     final running =
         phase == Phase.focusRunning || phase == Phase.breakRunning;
     // While resting between sessions, tick to accrue passive idle recovery so
-    // the stamina bar climbs live — until it tops out.
+    // the stamina bar climbs live — until it tops out. The bar moves slowly
+    // enough that 5 s steps read the same as 1 s while sparing ~5× the wake-ups
+    // when the user lingers on the screen after a session.
     final recovering = Engine.restsBetweenFocus(phase) &&
         _state.staminaSyncedAtMs > 0 &&
         _state.stamina < gm.kMaxStamina;
-    if (_foreground && (running || recovering)) {
-      _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) => _tick());
-    } else {
-      _ticker?.cancel();
-      _ticker = null;
-    }
+    final desired = !_foreground
+        ? null
+        : running
+            ? _runningTickInterval
+            : recovering
+                ? _recoveryTickInterval
+                : null;
+    if (desired == _tickerInterval) return;
+    _ticker?.cancel();
+    _tickerInterval = desired;
+    _ticker =
+        desired == null ? null : Timer.periodic(desired, (_) => _tick());
   }
 
   void _tick() {

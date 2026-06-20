@@ -53,6 +53,28 @@ class Palette {
         ink: Color.lerp(a.ink, b.ink, t)!,
         brightness: t < 0.5 ? a.brightness : b.brightness,
       );
+
+  // Value equality so an unchanged palette compares equal across rebuilds.
+  // Without it, every rebuild produces a fresh instance that PaletteTransition
+  // reads as a new target (restarting its crossfade) and PaletteScope reads as a
+  // change (rebuilding all dependents) — which, with the 1 Hz session tick, turns
+  // a steady focus session into a continuous 60 fps rebuild of the whole tree.
+  @override
+  bool operator ==(Object other) =>
+      other is Palette &&
+      other.sky == sky &&
+      other.skyLow == skyLow &&
+      other.far == far &&
+      other.midFar == midFar &&
+      other.mid == mid &&
+      other.near == near &&
+      other.inkSoft == inkSoft &&
+      other.ink == ink &&
+      other.brightness == brightness;
+
+  @override
+  int get hashCode =>
+      Object.hash(sky, skyLow, far, midFar, mid, near, inkSoft, ink, brightness);
 }
 
 /// Builds the palette for a map. [cycle] is the number of completed 25-map
