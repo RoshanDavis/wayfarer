@@ -62,11 +62,9 @@ class _WayfarerAppState extends State<WayfarerApp>
         setState(() => _foreground = true);
         controller.onAppResumed();
       case AppLifecycleState.inactive:
-        // Transient only — the OS permission dialog, the notification shade, an
-        // incoming call, the app switcher. Not a real backgrounding: keep the
-        // session ticking and don't post the ongoing notification, which would
-        // otherwise flash in and straight back out. A genuine background always
-        // follows with hidden/paused below.
+        // Transient (permission dialog, shade, call, app switcher) — not a real
+        // background: keep ticking and don't post the ongoing status (it would
+        // flash in and out). A genuine background follows with hidden/paused.
         break;
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
@@ -100,10 +98,9 @@ class _WayfarerAppState extends State<WayfarerApp>
             final softened = s.timer.phase == Phase.breakRunning ||
                 s.timer.phase == Phase.breakComplete;
 
-            // The accent (hue + saturation) starts at a random place each app
-            // open (controller.accentSeed) and then steps through the curated
-            // map palettes once per completed session, independent of the
-            // terrain; PaletteTransition crossfades to the new colour.
+            // Accent starts at a random place each open (accentSeed) and steps
+            // through the palettes per completed session; PaletteTransition
+            // crossfades to the new colour.
             final palette = buildPalette(
               map: accentForSession(s.sessionsCompleted,
                   seed: controller.accentSeed),

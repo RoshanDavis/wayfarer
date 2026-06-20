@@ -1,8 +1,6 @@
 /// Wayfarer game math — the single source of truth for all numbers.
-///
-/// Pure Dart: no Flutter imports. Every rule of the game economy lives here
-/// as a named constant or a pure function, so the whole game is tunable from
-/// this one file and testable without a device.
+/// Pure Dart: every economy rule is a named constant or pure function here, so
+/// the game is tunable from one file and testable without a device.
 library;
 
 import 'dart:math' as math;
@@ -61,9 +59,8 @@ int clampMinutes(int minutes, int lo, int hi) =>
 // XP economy
 // ---------------------------------------------------------------------------
 
-/// Base XP earned per minute of focus. A full default 25-minute session earns
-/// 10 XP (0.4 × 25); time spent always counts, so ending early is still
-/// rewarded for the minutes worked.
+/// Base XP per focus minute. A full 25-minute session earns 10 XP (0.4 × 25);
+/// time always counts, so ending early is still rewarded for minutes worked.
 const double kXpPerFocusMinute = 0.4;
 
 /// Bonus XP for completing a full set (4 sessions). Scaled by the consistency
@@ -74,42 +71,37 @@ const int kXpSetBonus = 7;
 /// or odometer. Like the set bonus, scaled only by the consistency multiplier.
 const int kXpPerMarker = 7;
 
-/// Trailing-window consistency multiplier knobs. Each distinct day with focus
-/// in the last [kConsistencyWindowDays] adds [kConsistencyBonusPerDay] to the
-/// XP-gain multiplier, capped at [kConsistencyMaxBonus]. Rewards showing up
-/// regularly without punishing the odd missed day.
+/// Consistency multiplier knobs: each distinct day with focus in the last
+/// [kConsistencyWindowDays] adds [kConsistencyBonusPerDay] to the XP-gain
+/// multiplier, capped at [kConsistencyMaxBonus].
 const double kConsistencyBonusPerDay = 0.05;
 const int kConsistencyWindowDays = 14;
 const double kConsistencyMaxBonus = 0.70; // == kConsistencyWindowDays * perDay
 
-/// Safety cap on the marker-XP fixpoint passes in the engine: marker XP can
-/// fund another level, which can cross another marker. Converges in 1–2 passes
-/// in practice; the cap only guards against a pathological loop.
+/// Safety cap on the engine's marker-XP fixpoint: marker XP can fund a level
+/// that crosses another marker. Converges in 1–2 passes; the cap guards a loop.
 const int kMaxMarkerPasses = 8;
 
 // ---------------------------------------------------------------------------
 // Stamina
 // ---------------------------------------------------------------------------
 
-/// Stamina capacity in full focus sessions at level 1. A full session drains
-/// `100 / capacity` percent — at 2.0 that is 50% per session, so the bar empties
-/// after 50 minutes of focus at the default 25-minute length.
+/// Stamina capacity in full focus sessions at level 1. A session drains
+/// `100 / capacity` percent — at 2.0 that is 50%, emptying after 50 focus min.
 const double kBaseStaminaCapacitySessions = 2.0;
 
 /// Additional capacity per level past 1.
 const double kStaminaCapacityPerLevel = 0.05;
 
-/// Speed and XP-per-time multiplier while fully drained. Above 0% stamina travel
-/// is at full speed and full XP; at exactly 0% both are halved, restoring the
-/// moment stamina rises above 0 — pillar 2 (nothing ever fully stops).
+/// Speed/XP multiplier while fully drained: full above 0% stamina, halved at
+/// exactly 0%, restoring the moment it rises again — nothing ever fully stops.
 const double kSpeedFloor = 0.5;
 
 const double kMaxStamina = 100.0;
 
-/// Minutes of any non-focus time (idle, paused, short or long break) needed to
-/// refill a fully drained stamina bar — the single recovery-rate knob. Kept
-/// independent of the long-break timer length so recovery feel and break
-/// duration tune separately. Defaults to the long-break default (15 min).
+/// Minutes of any non-focus time (idle, paused, break) to refill a drained bar
+/// — the single recovery-rate knob, kept independent of the long-break length so
+/// recovery feel and break duration tune separately.
 const int kStaminaRecoveryMinutes = 15;
 const int kStaminaRecoveryMs = kStaminaRecoveryMinutes * 60 * 1000;
 
@@ -165,12 +157,9 @@ double consistencyBonusFraction(int activeDays) =>
 double consistencyMultiplier(int activeDays) =>
     1.0 + consistencyBonusFraction(activeDays);
 
-/// Base XP earned for [elapsedFocusMs] of focus. Uses [effectiveFocusMs] so the
-/// half-rate debuff engages the instant stamina hits 0 mid-session (full rate
-/// before the zero-crossing, halved after). The set-completion bonus and the
-/// consistency multiplier are applied separately by the engine, so a full
-/// default 25-minute session from full stamina yields 10 XP and a 20-minute
-/// early end yields 8.
+/// Base XP for [elapsedFocusMs] of focus, via [effectiveFocusMs] so the half-rate
+/// debuff applies after stamina hits 0 mid-session. The set bonus and consistency
+/// multiplier are applied separately by the engine (full 25-min run → 10 XP).
 int xpForFocus({
   required int elapsedFocusMs,
   required double staminaAtSessionStart,
@@ -215,12 +204,10 @@ double drainFor({
 double staminaSpeedModifier(double stamina) =>
     stamina <= 0 ? kSpeedFloor : 1.0;
 
-/// Effective full-rate focus milliseconds for a chunk of [elapsedFocusMs],
-/// accounting for the half-rate stamina debuff. Stamina falls linearly from
-/// [staminaAtStart] as focus accrues; milliseconds before the zero-crossing
-/// count at full rate, milliseconds after it at [kSpeedFloor]. Within a focus
-/// session stamina only drains, so there is at most one crossing — the debuff
-/// engages the instant stamina hits 0 and lifts the instant it rises above 0.
+/// Effective full-rate focus ms for [elapsedFocusMs], accounting for the half-rate
+/// debuff. Stamina falls linearly from [staminaAtStart]; ms before the zero-
+/// crossing count at full rate, ms after at [kSpeedFloor]. Stamina only drains
+/// within a session, so there is at most one crossing.
 double effectiveFocusMs({
   required int level,
   required double staminaAtStart,
@@ -234,10 +221,9 @@ double effectiveFocusMs({
   return msToZero + (elapsedFocusMs - msToZero) * kSpeedFloor;
 }
 
-/// Stamina recovered over [elapsedMs] of any non-focus time — idle, paused, or a
-/// short/long break — all at the same rate: a fully drained bar refills over
-/// [kStaminaRecoveryMinutes]. The caller decides which phases count and clamps
-/// the resulting stamina to 100.
+/// Stamina recovered over [elapsedMs] of non-focus time (idle, paused, break),
+/// all at the same rate — a drained bar refills over [kStaminaRecoveryMinutes].
+/// The caller decides which phases count and clamps the result to 100.
 double recovery(int elapsedMs) =>
     elapsedMs <= 0 ? 0 : kMaxStamina * (elapsedMs / kStaminaRecoveryMs);
 
@@ -245,13 +231,9 @@ double recovery(int elapsedMs) =>
 // Distance
 // ---------------------------------------------------------------------------
 
-/// Distance in km for [elapsedFocusMs] of travel.
-///
-/// Pace is fixed by the level at session start. The stamina modifier is dynamic
-/// within the chunk: full while stamina is above 0, halved the instant it hits
-/// 0 (see [effectiveFocusMs]). [staminaAtSessionStart] is the stamina at the
-/// start of this chunk. Computed only at pause or session end — never on a live
-/// tick.
+/// Distance in km for [elapsedFocusMs] of travel. Pace is fixed by the
+/// session-start level; the stamina modifier is dynamic within the chunk (see
+/// [effectiveFocusMs]). Computed only at pause or session end — never on a tick.
 double distanceKm({
   required int levelAtSessionStart,
   required double staminaAtSessionStart,

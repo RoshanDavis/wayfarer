@@ -66,10 +66,8 @@ const List<WorldMap> kMaps = [
   WorldMap('Maple Wood', 28, 0.50, Terrain.jaggedTreeline),
 ];
 
-/// Index into [kMaps] for a player at [level]. The map advances every level and
-/// loops past the end — level 1 is map 0, level 25 is map 24, level 26 wraps to
-/// map 0. Consecutive levels always differ (i+1 mod N != i for N > 1), so any
-/// level-up changes the map.
+/// Index into [kMaps] for [level]: advances every level and loops (level 1 → 0,
+/// level 26 → 0). Consecutive levels always differ, so any level-up changes it.
 int mapIndexForLevel(int level) => (level - 1) % kMaps.length;
 
 /// How many full [kMaps]-length loops the player has completed at [level].
@@ -79,14 +77,8 @@ int mapCycleForLevel(int level) => (level - 1) ~/ kMaps.length;
 
 WorldMap mapForLevel(int level) => kMaps[mapIndexForLevel(level)];
 
-/// The accent palette (hue + saturation) for a player with [sessionsCompleted]
-/// completed focus sessions. Unlike the map — which governs terrain shape and
-/// advances every level — the accent steps through the curated map palettes (25)
-/// once per completed session, so the colour refreshes every session
-/// while the journey itself keeps its slow pace.
-///
-/// [seed] offsets the starting colour: the app rolls a fresh random seed on
-/// each launch, so every time you open the app you land on a different place's
-/// palette, and it keeps stepping from there as you complete sessions.
+/// Accent palette (hue + saturation) for [sessionsCompleted]: steps through the
+/// 25 curated palettes once per session, independent of the terrain map. [seed]
+/// (rolled fresh each launch) offsets the start, so each open lands on a new place.
 WorldMap accentForSession(int sessionsCompleted, {int seed = 0}) =>
     kMaps[(seed + sessionsCompleted) % kMaps.length];

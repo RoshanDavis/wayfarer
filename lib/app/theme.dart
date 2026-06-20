@@ -54,11 +54,10 @@ class Palette {
         brightness: t < 0.5 ? a.brightness : b.brightness,
       );
 
-  // Value equality so an unchanged palette compares equal across rebuilds.
-  // Without it, every rebuild produces a fresh instance that PaletteTransition
-  // reads as a new target (restarting its crossfade) and PaletteScope reads as a
-  // change (rebuilding all dependents) — which, with the 1 Hz session tick, turns
-  // a steady focus session into a continuous 60 fps rebuild of the whole tree.
+  // Value equality so an unchanged palette compares equal across rebuilds —
+  // otherwise each fresh instance restarts PaletteTransition's crossfade and
+  // rebuilds every PaletteScope dependent, turning a focus session into a
+  // continuous 60 fps whole-tree rebuild.
   @override
   bool operator ==(Object other) =>
       other is Palette &&
@@ -115,10 +114,9 @@ Palette buildPalette({
       brightness: brightness,
     );
   }
-  // Dark theme — the light theme's landscape, set under a night sky. The
-  // hills keep their light-theme tones (same colours, same depth); only the
-  // background swaps to a deep, accent-tinted vertical gradient and the ink
-  // flips light so text reads over it.
+  // Dark theme: the light theme's landscape under a night sky. The hills keep
+  // their light-theme tones; only the sky swaps to a deep accent gradient and
+  // the ink flips light so text reads over it.
   return Palette(
     sky: step(0.085, 0.85),
     skyLow: step(0.165, 1.0),

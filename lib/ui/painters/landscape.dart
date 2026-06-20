@@ -17,10 +17,9 @@ import '../../app/theme.dart';
 /// How the scene moves.
 enum SceneMotion { still, drifting }
 
-// A tiny tiled noise image used to dither the sky gradient. A smooth dark
-// gradient otherwise shows visible 8-bit banding (the channels step in wide
-// bars); overlaying faint per-pixel noise jitters those steps into a smooth
-// blend. Generated once, shared across all scenes.
+// A tiny tiled noise image used to dither the sky gradient: a smooth dark
+// gradient shows 8-bit banding; faint per-pixel noise jitters the steps into a
+// smooth blend. Generated once, shared across all scenes.
 ui.Image? _ditherTile;
 bool _ditherRequested = false;
 
@@ -413,19 +412,16 @@ class _ScenePainter extends CustomPainter {
 
       final path = _layerPath(samples, w, h, spec.baseline, amp);
 
-      // Decor that belongs to (and scrolls with) a layer. (Tree canopies were
-      // removed — the round/oval blobs read as floating balls; each map's
-      // character now comes from its palette and ambient particles instead.)
+      // Decor that scrolls with a layer. (Tree canopies were removed — they read
+      // as floating balls; map character now comes from the palette.)
       if (map.terrain == Terrain.verticalGrove && (layer == 1 || layer == 2)) {
         _addStalks(path, layerRng, w, h, specs[layer], dense: layer == 2);
       }
       paths.add(path);
     }
 
-
-    // The night-sky starfield (drawn only in dark mode): a stationary scatter
-    // of pale dots across the upper sky. Generated always, cheap, drawn never
-    // in light mode.
+    // Dark-mode-only night-sky starfield: a stationary scatter of pale dots
+    // across the upper sky. Always generated (cheap), drawn only in dark mode.
     final bgStars = <_Particle>[
       for (var i = 0; i < 40; i++)
         _Particle(
@@ -529,11 +525,9 @@ class _ScenePainter extends CustomPainter {
     return [for (final v in base) (v * steps).floor() / steps];
   }
 
-  /// A coastal range of headlands and inlets dropping to the sea. Several drops
-  /// of varied position, width and depth — over finer upland relief — so the
-  /// shore reads as a living coastline rather than one cliff face looping past
-  /// as the scene scrolls. The carved inlets stay in the interior so both ends
-  /// remain upland and the profile still tiles seamlessly (see [_layerPath]).
+  /// A coastal range of headlands and inlets dropping to the sea. Inlets vary in
+  /// position/width/depth over finer upland relief, and stay in the interior so
+  /// both ends remain upland and the profile tiles seamlessly (see [_layerPath]).
   List<double> _plateau(math.Random rng, int n) {
     final top = _smoothNoise(rng, n, maxF: 5); // finer upland relief
     final inletCount = 3 + rng.nextInt(2); // 3–4 inlets
@@ -583,10 +577,9 @@ class _ScenePainter extends CustomPainter {
     final count = dense ? 9 : 6;
     final baseY = h * (spec.baseline + 0.01);
     for (var i = 0; i < count; i++) {
-      // Draw each stalk's randoms once, then place an identical copy in both
-      // tiles (x and x + w). The layer path spans 2× width and scrolls with a
-      // wrap at w, so the two tiles must match exactly — otherwise the grove
-      // visibly snaps to a new arrangement each time the scroll wraps.
+      // Draw each stalk's randoms once and place an identical copy in both tiles
+      // (x and x + w): the 2×-width path wraps at w, so the tiles must match or
+      // the grove snaps to a new arrangement on each wrap.
       final x = (i + 0.2 + rng.nextDouble() * 0.6) / count * w;
       final stalkW = h * (0.006 + rng.nextDouble() * 0.007);
       final stalkH = h * (0.10 + rng.nextDouble() * 0.13);

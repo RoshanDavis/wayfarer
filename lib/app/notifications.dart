@@ -1,19 +1,10 @@
-/// Session notifications — the only notifications this app may ever send.
-///
-/// Two kinds, on two channels:
-///   • The completion alert (id [phaseEndId], channel 'session_end_v4',
-///     high importance): scheduled when a focus session or break starts,
-///     announcing its end. It carries the app's own chime and follows the
-///     phone's ringer for vibration — chiming when the ring volume is up,
-///     vibrating on vibrate, silent under Do Not Disturb. It is a fresh,
-///     distinct post (separate from the ongoing status below) so the OS always
-///     re-alerts when it fires.
-///   • The ongoing status (id [sessionActiveId], channel 'session_active',
-///     low importance): a quiet "Focusing until …" banner shown while the app
-///     is in the background. No sound, no vibration, no heads-up — it just sits
-///     in the shade and clears when the session ends or the app is reopened.
-///
-/// Notifications are presentation only: timer correctness never depends on them.
+/// Session notifications — the only notifications this app sends. Presentation
+/// only: timer correctness never depends on them. Two channels:
+///   • Completion alert ([phaseEndId], 'session_end_v4', high importance):
+///     scheduled at phase start, announces the end with the app's chime and
+///     ringer-following vibration. A fresh, distinct post so the OS re-alerts.
+///   • Ongoing status ([sessionActiveId], 'session_active', low importance): a
+///     silent "Focusing until …" banner while backgrounded; clears at end/reopen.
 library;
 
 import 'dart:typed_data';
@@ -145,10 +136,9 @@ class NotificationService {
     } catch (_) {}
   }
 
-  /// The shared presentation for the completion alert — high importance, the
-  /// bundled chime, and the ringer-following vibration. Used both when the alert
-  /// is scheduled ([schedulePhaseEnd]) and when it is posted live in the
-  /// foreground ([showPhaseEnd]), so the two paths stay identical.
+  /// Shared presentation for the completion alert (high importance, chime,
+  /// ringer-following vibration), used by both the scheduled ([schedulePhaseEnd])
+  /// and live ([showPhaseEnd]) paths so they stay identical.
   NotificationDetails get _phaseEndDetails => NotificationDetails(
         android: AndroidNotificationDetails(
           _channelId,
@@ -173,10 +163,9 @@ class NotificationService {
     final when =
         tz.TZDateTime.fromMillisecondsSinceEpoch(tz.UTC, atMs + graceMs);
     try {
-      // Inexact scheduling — the app requests no exact-alarm permission (Google
-      // Play restricts USE_EXACT_ALARM to clock/calendar apps). The banner may
-      // arrive a little late under Doze; when the app is open the live reveal
-      // announces completion first, and correctness never depends on it.
+      // Inexact scheduling — no exact-alarm permission (Play restricts
+      // USE_EXACT_ALARM to clock/calendar apps). May arrive a little late under
+      // Doze; the live reveal announces completion when open, so it's fine.
       await _plugin.zonedSchedule(
         phaseEndId,
         title,

@@ -26,9 +26,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _confirmingReset = false;
   Timer? _confirmTimer;
 
-  // The full installed version, read from the build at runtime so it always
-  // matches the actual APK/AAB (versionName + versionCode, e.g. "1.3.2+11") —
-  // no manual sync with pubspec. Empty until loaded.
+  // Installed version, read from the build at runtime so it always matches the
+  // APK/AAB (e.g. "1.3.2+11") — no manual pubspec sync. Empty until loaded.
   String _version = '';
 
   // Optional support link. Opens in the external browser and unlocks nothing
@@ -74,10 +73,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Centered title with a back chevron at the left. The +8 top pad
-            // drops the title's line-top to topInset + 26 (SafeArea inset + 8 +
-            // the 18px centring slack), matching the Focus header on home so the
-            // two titles line up when navigating between the screens.
+            // Centered title with a back chevron. The +8 top pad aligns the
+            // title's line-top with the Focus header on home, so the two line up
+            // when navigating between screens.
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: SizedBox(
@@ -544,7 +542,7 @@ class _OutlineButton extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Theme chips + toggles (unchanged)
+// Theme chips + toggles
 // ---------------------------------------------------------------------------
 
 class _ThemeOption extends StatelessWidget {

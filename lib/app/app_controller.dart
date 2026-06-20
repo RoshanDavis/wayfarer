@@ -40,9 +40,8 @@ class AppController extends ChangeNotifier {
   late GameState _state;
   GameState get state => _state;
 
-  /// A fresh random offset into the accent palettes, rolled once per app
-  /// launch — so each time the app opens it lands on a different place's
-  /// colour, then keeps stepping from there as sessions complete.
+  /// A fresh offset into the accent palettes, rolled once per launch so each
+  /// open lands on a different place's colour (see accentForSession).
   final int accentSeed = Random().nextInt(1 << 30);
 
   Timer? _ticker;
@@ -93,10 +92,8 @@ class AppController extends ChangeNotifier {
     // Save the latest (e.g. idle-recovered) stamina. Re-derivable from the sync
     // point regardless, but persisting keeps the on-disk snapshot current.
     unawaited(_persistence.save(_state));
-    // Backgrounding is the moment the completion alert matters most: (re)schedule
-    // it so it fires even if the alarm was never set this run (e.g. the app was
-    // cold-started mid-session). Idempotent — same id replaces. Then show the
-    // quiet ongoing status.
+    // (Re)schedule the completion alert so it fires even if the alarm was never
+    // set this run (e.g. cold-started mid-session); idempotent, same id replaces.
     _schedulePhaseEndNotification(_state);
     _showSessionActiveNotification();
   }
@@ -326,10 +323,8 @@ class AppController extends ChangeNotifier {
       return;
     }
     if (nowMs >= t.phaseEndsAtMs!) {
-      // Live completion with the app open. Drop the pending scheduled alarm
-      // (so it can't double-fire after its grace window), then post the
-      // completion alert live so its banner + chime appear in the foreground
-      // too — alongside the in-app reveal.
+      // Live completion with the app open: drop the scheduled alarm (so it can't
+      // double-fire) and post the alert live alongside the in-app reveal.
       unawaited(_notifications.cancelPhaseEnd());
       _showPhaseEndNotificationNow(_state);
       _apply(Engine.reconstruct(_state, nowMs));
@@ -410,15 +405,12 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Notification setup at launch. If the user wants completion alerts but the
-  /// OS hasn't granted POST_NOTIFICATIONS yet, ask for it once the first frame
-  /// is up — this is what surfaces Android 13+'s permission dialog on a fresh
-  /// install. The request is a silent no-op once the user has already decided
-  /// (granted or denied), so it never nags and is safe to run every launch;
-  /// crucially it is *not* gated on a "first run" flag, which a stray save from
-  /// an aborted first launch could wrongly clear, permanently suppressing the
-  /// prompt. We never auto-disable the toggle on denial — the Settings "blocked"
-  /// hint and its system-settings deep link are the recovery path instead.
+  /// Notification setup at launch: if the user wants alerts but POST_NOTIFICATIONS
+  /// isn't granted, ask once the first frame is up (surfaces Android 13+'s dialog
+  /// on fresh install). The request is a no-op once decided, so it's safe every
+  /// launch and deliberately NOT gated on a first-run flag — a stray early save
+  /// could wrongly clear that and suppress the prompt forever. Denial is recovered
+  /// via the Settings "blocked" hint, never by auto-disabling the toggle.
   Future<void> _initNotifications() async {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // The OS only shows its permission dialog for a resumed, focused

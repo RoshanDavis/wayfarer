@@ -1,9 +1,6 @@
-/// Badge icons: minimal monochrome line glyphs in the current accent ink.
-///
-/// Each badge resolves to a distinct glyph (see [glyphForBadge]) so the marker
-/// wall reads with variety — footprints and wheels for the speeds outrun,
-/// peaks and waves for the maps reached, waymarkers and globes for the
-/// distances run.
+/// Badge icons: minimal monochrome line glyphs in the current accent ink. Each
+/// badge resolves to a distinct glyph (see [glyphForBadge]) so the marker wall
+/// reads with variety — footprints, wheels, peaks, waves, waymarkers, globes.
 library;
 
 import 'dart:math' as math;

@@ -163,34 +163,23 @@ class _HomeScreenState extends State<HomeScreen> {
             )),
           ],
         ),
-        // The single control floats over the world. It rests near the ground,
-        // and as you scroll up it sticks just beneath the timer/distance and
-        // stays there. A sky cushion fades in behind it as the Journey climbs
-        // up, so the rising content reads cleanly underneath the ring rather
-        // than colliding with it — while over the open landscape the control
-        // floats with no band at all.
+        // Floating control: rises with the scroll, then pins under the header. A
+        // sky cushion fades in so rising Journey content reads cleanly beneath it.
         AnimatedBuilder(
           animation: _scroll,
           builder: (context, child) {
             final offset = _scroll.hasClients ? _scroll.position.pixels : 0.0;
             const blockH = 146.0;
-            // The band tucks right under the header (which masks everything
-            // above it) and stays solid across the whole control — ring and
-            // 'End early' alike — fading out only just below the link, so the
-            // rising Journey disappears cleanly beneath the button instead of
-            // colliding with it.
+            // The band stays solid across the whole control, fading just below the
+            // link so the rising Journey disappears cleanly beneath it.
             const topPad = 4.0;
             const bottomPad = 22.0;
-            // Sticks up under the timer numeral (in the reserved distance-line
-            // space), so the ring keeps rising well into the scroll before it
-            // pins.
+            // Sticks under the timer numeral, so the ring rises well into the scroll.
             final stickTop = headerHeight - 28;
             final restingTop = screenH - screenH * 0.085 - blockH;
-            // Rises with the scroll, then sticks just below the header.
             final ringTop = math.max(stickTop, restingTop - offset);
-            // How much solid Journey content (past its ~140px ground-fade) has
-            // climbed in behind the stuck control: 0 over the open landscape,
-            // 1 once the Journey meets the ring. Drives the sky backing.
+            // How much solid Journey content has climbed behind the stuck control
+            // (0 over open landscape, 1 once it meets the ring): drives the backing.
             final solidTop = headerHeight + _panelHeight + 140 - offset;
             final cushion = (1 - (solidTop - stickTop) / 140).clamp(0.0, 1.0);
             return Positioned(
@@ -313,10 +302,9 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
       ),
     );
 
-    // The header's lower edge is see-through at rest, so the timer floats over
-    // the mountains. As the Journey scrolls up into the header zone, that edge
-    // fills back to solid sky — the rising content disappears cleanly beneath
-    // the timer rather than ghosting through it.
+    // The header's lower edge is see-through at rest (timer floats over the
+    // mountains); as the Journey scrolls up into it, the edge fills to solid sky
+    // so the content disappears cleanly beneath the timer.
     return AnimatedBuilder(
       animation: scroll,
       builder: (context, child) {
@@ -393,9 +381,8 @@ class _Countdown extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = PaletteScope.of(context);
     final w = MediaQuery.sizeOf(context).width;
-    // Cap at 104 (not 112): only wide/tablet widths reach the cap, where a
-    // taller numeral would overflow the fixed-height header. Phones compute
-    // well under this, so their countdown size is unchanged.
+    // Cap at 104 so the numeral can't overflow the fixed header on wide/tablet
+    // widths; phones compute well under this, so their size is unchanged.
     final size = (w * 0.235).clamp(64.0, 104.0);
     return AnimatedOpacity(
       opacity: dimmed ? 0.45 : 1.0,
@@ -510,10 +497,8 @@ class _ControlArea extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Compact block (104 ring + 42 link = 146); the overlay places it. The
-    // Column fills the full width (the overlay pins left:0/right:0), and
-    // _ScrollThrough catches drags across that whole horizontal band — not just
-    // on the ring — forwarding them to the page so the entire strip scrolls.
+    // Compact 146px block, placed by the overlay. _ScrollThrough catches drags
+    // across the whole full-width band (not just the ring) and forwards them.
     return _ScrollThrough(
       controller: scroll,
       child: Column(
@@ -531,14 +516,11 @@ class _ControlArea extends StatelessWidget {
   }
 }
 
-/// Forwards vertical drags anywhere on its child straight to [controller]'s
-/// scroll position. The control floats in a `Positioned` overlay above the
-/// `CustomScrollView` (a separate hit-test branch), so the whole horizontal
-/// band it occupies — ring, link, and the empty space either side — would
-/// otherwise be a dead zone for scrolling. Driving the position via
-/// `ScrollPosition.drag` gives proper fling ballistics for free; a still touch
-/// still falls through to the ring/link tap (drag only wins once the finger
-/// moves), so the buttons keep working.
+/// Forwards vertical drags anywhere on its child to [controller]'s scroll
+/// position. The control floats in a `Positioned` overlay (a separate hit-test
+/// branch), so its band would otherwise be a scroll dead zone. Driving the
+/// position via `ScrollPosition.drag` gives fling ballistics for free; a still
+/// touch falls through to the ring/link tap (drag wins only once the finger moves).
 class _ScrollThrough extends StatefulWidget {
   final ScrollController controller;
   final Widget child;
@@ -579,10 +561,8 @@ class _ScrollThroughState extends State<_ScrollThrough> {
 
   @override
   Widget build(BuildContext context) {
-    // Opaque so the detector spans the full width of its (full-width) child,
-    // catching drags across the whole band rather than only where the ring and
-    // link actually paint. Taps still reach those buttons (descendants in the
-    // same gesture arena win a stationary press over the drag).
+    // Opaque so the detector spans the full-width child, catching drags across
+    // the whole band. Taps still reach the buttons (a stationary press wins).
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onVerticalDragStart: _onStart,
