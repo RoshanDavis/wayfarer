@@ -13,8 +13,8 @@ class SpeedComparison {
   const SpeedComparison(this.id, this.name, this.kmh, this.line);
 }
 
-/// Reference speeds, ascending — all real figures (top/typical speeds).
-/// Crossing one awards a badge and a single understated session-end line.
+/// Reference speeds, ascending (real figures). Crossing one awards a badge and a
+/// single session-end line.
 const List<SpeedComparison> kComparisons = [
   SpeedComparison('walking-human', 'Walking human', 5,
       'You now outpace a walking human.'),

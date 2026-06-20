@@ -53,9 +53,30 @@ class Palette {
         ink: Color.lerp(a.ink, b.ink, t)!,
         brightness: t < 0.5 ? a.brightness : b.brightness,
       );
+
+  // Value equality so an unchanged palette compares equal across rebuilds —
+  // otherwise each fresh instance restarts PaletteTransition's crossfade and
+  // rebuilds every PaletteScope dependent, turning a focus session into a
+  // continuous 60 fps whole-tree rebuild.
+  @override
+  bool operator ==(Object other) =>
+      other is Palette &&
+      other.sky == sky &&
+      other.skyLow == skyLow &&
+      other.far == far &&
+      other.midFar == midFar &&
+      other.mid == mid &&
+      other.near == near &&
+      other.inkSoft == inkSoft &&
+      other.ink == ink &&
+      other.brightness == brightness;
+
+  @override
+  int get hashCode =>
+      Object.hash(sky, skyLow, far, midFar, mid, near, inkSoft, ink, brightness);
 }
 
-/// Builds the palette for a map. [cycle] is the number of completed 24-map
+/// Builds the palette for a map. [cycle] is the number of completed 25-map
 /// loops — later cycles shift the ramp slightly so revisited maps feel like a
 /// different time of day. [soften] (0..1) quiets the palette during breaks.
 Palette buildPalette({
@@ -93,10 +114,9 @@ Palette buildPalette({
       brightness: brightness,
     );
   }
-  // Dark theme — the light theme's landscape, set under a night sky. The
-  // hills keep their light-theme tones (same colours, same depth); only the
-  // background swaps to a deep, accent-tinted vertical gradient and the ink
-  // flips light so text reads over it.
+  // Dark theme: the light theme's landscape under a night sky. The hills keep
+  // their light-theme tones; only the sky swaps to a deep accent gradient and
+  // the ink flips light so text reads over it.
   return Palette(
     sky: step(0.085, 0.85),
     skyLow: step(0.165, 1.0),

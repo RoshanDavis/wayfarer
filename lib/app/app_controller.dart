@@ -40,9 +40,8 @@ class AppController extends ChangeNotifier {
   late GameState _state;
   GameState get state => _state;
 
-  /// A fresh random offset into the accent palettes, rolled once per app
-  /// launch — so each time the app opens it lands on a different place's
-  /// colour, then keeps stepping from there as sessions complete.
+  /// A fresh offset into the accent palettes, rolled once per launch so each
+  /// open lands on a different place's colour (see accentForSession).
   final int accentSeed = Random().nextInt(1 << 30);
 
   Timer? _ticker;
@@ -89,13 +88,12 @@ class AppController extends ChangeNotifier {
     _foreground = false;
     _ticker?.cancel();
     _ticker = null;
+    _tickerInterval = null;
     // Save the latest (e.g. idle-recovered) stamina. Re-derivable from the sync
     // point regardless, but persisting keeps the on-disk snapshot current.
     unawaited(_persistence.save(_state));
-    // Backgrounding is the moment the completion alert matters most: (re)schedule
-    // it so it fires even if the alarm was never set this run (e.g. the app was
-    // cold-started mid-session). Idempotent — same id replaces. Then show the
-    // quiet ongoing status.
+    // (Re)schedule the completion alert so it fires even if the alarm was never
+    // set this run (e.g. cold-started mid-session); idempotent, same id replaces.
     _schedulePhaseEndNotification(_state);
     _showSessionActiveNotification();
   }
@@ -271,31 +269,41 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// A 1 Hz wall-clock check while a phase is running and the app is
-  /// foregrounded — purely for live countdown display and live completion.
-  /// Correctness never depends on it; reconstruction covers every gap.
+  /// 1 Hz while a phase is running (live countdown/completion); a calmer 0.2 Hz
+  /// while only stamina is recovering between sessions. Correctness never depends
+  /// on the ticker — reconstruction covers every gap.
+  static const Duration _runningTickInterval = Duration(seconds: 1);
+  static const Duration _recoveryTickInterval = Duration(seconds: 5);
+
+  /// The period of the currently active [_ticker], or null when it is stopped —
+  /// kept in lockstep with [_ticker] so [_syncTicker] only rebuilds the timer
+  /// when the required cadence actually changes.
+  Duration? _tickerInterval;
+
   void _syncTicker() {
     final phase = _state.timer.phase;
     final running =
         phase == Phase.focusRunning || phase == Phase.breakRunning;
     // While resting between sessions, tick to accrue passive idle recovery so
-    // the stamina bar climbs live — until it tops out.
-    final recovering = _restingPhase(phase) &&
+    // the stamina bar climbs live — until it tops out. The bar moves slowly
+    // enough that 5 s steps read the same as 1 s while sparing ~5× the wake-ups
+    // when the user lingers on the screen after a session.
+    final recovering = Engine.restsBetweenFocus(phase) &&
         _state.staminaSyncedAtMs > 0 &&
         _state.stamina < gm.kMaxStamina;
-    if (_foreground && (running || recovering)) {
-      _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) => _tick());
-    } else {
-      _ticker?.cancel();
-      _ticker = null;
-    }
+    final desired = !_foreground
+        ? null
+        : running
+            ? _runningTickInterval
+            : recovering
+                ? _recoveryTickInterval
+                : null;
+    if (desired == _tickerInterval) return;
+    _ticker?.cancel();
+    _tickerInterval = desired;
+    _ticker =
+        desired == null ? null : Timer.periodic(desired, (_) => _tick());
   }
-
-  static bool _restingPhase(Phase phase) =>
-      phase == Phase.idle ||
-      phase == Phase.focusPaused ||
-      phase == Phase.focusComplete ||
-      phase == Phase.breakComplete;
 
   void _tick() {
     final t = _state.timer;
@@ -304,7 +312,7 @@ class AppController extends ChangeNotifier {
     if (!running) {
       // Resting: accrue idle recovery. Deterministic from the persisted sync
       // point, so we update in-memory and notify without a per-second write.
-      if (_restingPhase(t.phase) && _state.stamina < gm.kMaxStamina) {
+      if (Engine.restsBetweenFocus(t.phase) && _state.stamina < gm.kMaxStamina) {
         final next = Engine.reconstruct(_state, nowMs);
         if (!identical(next, _state)) {
           _state = next;
@@ -315,10 +323,8 @@ class AppController extends ChangeNotifier {
       return;
     }
     if (nowMs >= t.phaseEndsAtMs!) {
-      // Live completion with the app open. Drop the pending scheduled alarm
-      // (so it can't double-fire after its grace window), then post the
-      // completion alert live so its banner + chime appear in the foreground
-      // too — alongside the in-app reveal.
+      // Live completion with the app open: drop the scheduled alarm (so it can't
+      // double-fire) and post the alert live alongside the in-app reveal.
       unawaited(_notifications.cancelPhaseEnd());
       _showPhaseEndNotificationNow(_state);
       _apply(Engine.reconstruct(_state, nowMs));
@@ -399,15 +405,12 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Notification setup at launch. If the user wants completion alerts but the
-  /// OS hasn't granted POST_NOTIFICATIONS yet, ask for it once the first frame
-  /// is up — this is what surfaces Android 13+'s permission dialog on a fresh
-  /// install. The request is a silent no-op once the user has already decided
-  /// (granted or denied), so it never nags and is safe to run every launch;
-  /// crucially it is *not* gated on a "first run" flag, which a stray save from
-  /// an aborted first launch could wrongly clear, permanently suppressing the
-  /// prompt. We never auto-disable the toggle on denial — the Settings "blocked"
-  /// hint and its system-settings deep link are the recovery path instead.
+  /// Notification setup at launch: if the user wants alerts but POST_NOTIFICATIONS
+  /// isn't granted, ask once the first frame is up (surfaces Android 13+'s dialog
+  /// on fresh install). The request is a no-op once decided, so it's safe every
+  /// launch and deliberately NOT gated on a first-run flag — a stray early save
+  /// could wrongly clear that and suppress the prompt forever. Denial is recovered
+  /// via the Settings "blocked" hint, never by auto-disabling the toggle.
   Future<void> _initNotifications() async {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // The OS only shows its permission dialog for a resumed, focused

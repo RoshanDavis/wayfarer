@@ -1,14 +1,12 @@
 /// The pomodoro session engine: an explicit state machine over [GameState],
-/// driven entirely by wall-clock timestamps. Pure Dart.
+/// driven entirely by wall-clock timestamps. Pure Dart; every transition is a
+/// pure function `(GameState, nowMs) -> GameState`.
 ///
-/// Every transition is a pure function `(GameState, nowMs) -> GameState`.
-/// [reconstruct] re-derives the true state after any time gap (backgrounding,
-/// process death, reboot) — phases that finished while the app was dead are
-/// resolved at their *scheduled* wall-clock end, so distance, XP, badges and
-/// the pending reveal are identical whether or not the app was alive.
-///
-/// Phases never auto-chain: each running phase begins with a user tap, so at
-/// most the single in-flight phase can complete during a dead gap.
+/// [reconstruct] re-derives the true state after any gap (background, process
+/// death, reboot): phases that finished while dead resolve at their *scheduled*
+/// end, so awards are identical whether or not the app was alive. Phases never
+/// auto-chain — each begins with a user tap — so at most one in-flight phase can
+/// complete during a dead gap.
 library;
 
 import 'badges.dart';
@@ -128,10 +126,9 @@ class Engine {
     );
   }
 
-  /// Ends a focus session early. Distance and time-based XP for the minutes
-  /// worked are awarded (never confiscated), but the session does not count
-  /// toward the set — the focus simply ends and the user advances to the next
-  /// session, a short break. Valid from running or paused.
+  /// Ends a focus session early: distance and time XP for minutes worked are
+  /// awarded, but the session does not count toward the set (always a short
+  /// break next). Valid from running or paused.
   static GameState endFocusEarly(GameState s, int nowMs) {
     var state = s;
     if (state.timer.phase == Phase.focusRunning) {
@@ -282,15 +279,12 @@ class Engine {
     );
   }
 
-  /// Shared tail of finishing a focus segment: awards time-based XP (plus the
-  /// set bonus on a full set and a marker bonus per badge earned, all lifted by
-  /// the recent-consistency multiplier), resolves level-ups and tier/comparison/
-  /// odometer/map badges, banks distance and focus time, and routes to the
-  /// pending-break (focusComplete) state. [completed] distinguishes a full
-  /// session — which counts the session and set, adds the set bonus, and takes
-  /// the long break every 4th — from an early end, which counts neither and
-  /// always takes a short break (the long break is earned only by finishing a
-  /// set). The map advances on any level-up, independent of sets.
+  /// Shared tail of finishing a focus segment: awards time XP (+ set bonus on a
+  /// full set, + a marker bonus per badge, all × the consistency multiplier),
+  /// resolves level-ups and tier/map/comparison/odometer badges, banks distance
+  /// and time, and routes to focusComplete. [completed] = a full session (counts
+  /// the session/set, adds the set bonus, long break every 4th); false = an early
+  /// end (counts neither, always a short break). The map advances on any level-up.
   static GameState _finishFocus(
     GameState s, {
     required double stamina,
@@ -331,11 +325,9 @@ class Engine {
     final setBonus = completedSet ? gm.kXpSetBonus : 0;
     final baseXp = ((timeXp + setBonus) * mult).round();
 
-    // Markers award XP too, which can fund another level and so cross more
-    // markers. Resolve level, marker count and marker XP together by iterating
-    // to a fixpoint — always re-levelling from the original anchor so base XP is
-    // never double-counted. The marker count only grows with level, so this
-    // converges in a pass or two; the cap is a safety net.
+    // Markers award XP too, which can fund a level that crosses more markers.
+    // Iterate to a fixpoint, always re-levelling from the original anchor so base
+    // XP is never double-counted; converges in a pass or two (cap = safety net).
     var markerXp = 0;
     var markerCount = -1;
     var progress = gm.applyXp(
@@ -448,23 +440,19 @@ class Engine {
     );
   }
 
-  /// True for phases where the focus timer is not running and stamina recovers
-  /// at the long-break rate: between sessions (idle), after a finished session
-  /// awaiting a break (focusComplete), after a finished break (breakComplete),
-  /// and while a session is paused.
-  static bool _restsBetweenFocus(Phase phase) =>
+  /// Phases where the focus timer is not running and stamina recovers at the
+  /// long-break rate: idle, focusPaused, focusComplete, breakComplete.
+  static bool restsBetweenFocus(Phase phase) =>
       phase == Phase.idle ||
       phase == Phase.focusPaused ||
       phase == Phase.focusComplete ||
       phase == Phase.breakComplete;
 
-  /// Accrues long-break-rate recovery onto [s] from its last sync point up to
-  /// [nowMs], for resting phases only (idle, paused, focusComplete,
-  /// breakComplete). Idempotent: it always advances the sync point to [nowMs],
-  /// so re-running it credits nothing new. A no-op (beyond anchoring the clock)
-  /// for the running focus/break phases.
+  /// Accrues long-break-rate recovery from the last sync point to [nowMs], for
+  /// resting phases only. Idempotent — always advances the sync point — and a
+  /// no-op (beyond anchoring the clock) for running phases.
   static GameState _applyIdleRecovery(GameState s, int nowMs) {
-    if (!_restsBetweenFocus(s.timer.phase)) return s;
+    if (!restsBetweenFocus(s.timer.phase)) return s;
     final since = s.staminaSyncedAtMs;
     // First reconciliation (fresh or migrated state): anchor the clock without
     // crediting recovery for time before the app knew about it.

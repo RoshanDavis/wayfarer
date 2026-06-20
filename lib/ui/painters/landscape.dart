@@ -17,12 +17,25 @@ import '../../app/theme.dart';
 /// How the scene moves.
 enum SceneMotion { still, drifting }
 
-// A tiny tiled noise image used to dither the sky gradient. A smooth dark
-// gradient otherwise shows visible 8-bit banding (the channels step in wide
-// bars); overlaying faint per-pixel noise jitters those steps into a smooth
-// blend. Generated once, shared across all scenes.
+// A tiny tiled noise image used to dither the sky gradient: a smooth dark
+// gradient shows 8-bit banding; faint per-pixel noise jitters the steps into a
+// smooth blend. Generated once, shared across all scenes.
 ui.Image? _ditherTile;
 bool _ditherRequested = false;
+
+// Identity colour matrix for the dither [ui.ImageShader]. It never changes, and
+// paint() runs every frame while the scene drifts, so allocate it once and share.
+final Float64List _ditherMatrix = Float64List.fromList(const <double>[
+  1, 0, 0, 0, //
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1,
+]);
+
+// The dither tile shader is size- and palette-independent (a repeated tile under
+// the constant identity matrix), so build it once when the tile loads and reuse
+// it everywhere rather than allocating a fresh ImageShader on every paint.
+ui.ImageShader? _ditherShader;
 
 void _ensureDitherTile(VoidCallback onReady) {
   if (_ditherTile != null || _ditherRequested) return;
@@ -40,6 +53,8 @@ void _ensureDitherTile(VoidCallback onReady) {
   }
   ui.decodeImageFromPixels(px, n, n, ui.PixelFormat.rgba8888, (img) {
     _ditherTile = img;
+    _ditherShader =
+        ui.ImageShader(img, TileMode.repeated, TileMode.repeated, _ditherMatrix);
     onReady();
   });
 }
@@ -137,12 +152,20 @@ class _LandscapeViewState extends State<LandscapeView>
   void dispose() {
     _ticker.dispose();
     _frame.dispose();
+    _bg?.dispose();
     super.dispose();
   }
 
   // Geometry cache, held per view so coexisting scenes never thrash it.
   _Geometry? _geo;
   int _geoKey = 0;
+
+  // The static background (sky gradient + dither + night-sky stars) recorded as a
+  // picture, so the drift ticker replays it each frame instead of re-rasterizing
+  // a full-screen gradient and overlay blend 60 times a second. Rebuilt only when
+  // the size or palette changes; the moving layers are drawn fresh on top.
+  ui.Picture? _bg;
+  int _bgKey = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -184,15 +207,13 @@ const _nearSpec = _LayerSpec(0.70, 0.016, 1.0);
 class _Geometry {
   final List<Path> layerPaths; // far → near, each spanning 2× width
   final List<double> parallax;
-  final List<_Particle> particles; // ambient effect for the map (see kind)
   final List<_Particle> bgStars; // stationary night-sky stars (dark mode only)
   final List<Rect> speedLines;
-  _Geometry(this.layerPaths, this.parallax, this.particles, this.bgStars,
-      this.speedLines);
+  _Geometry(this.layerPaths, this.parallax, this.bgStars, this.speedLines);
 }
 
-/// One ambient particle: a fixed spawn point plus a phase. How it actually
-/// moves and reads is decided per [MapParticle] kind at paint time.
+/// One scene dot: a fixed spawn point plus a phase. Used for the stationary
+/// dark-mode night-sky starfield.
 class _Particle {
   final double x;
   final double y;
@@ -232,44 +253,18 @@ class _ScenePainter extends CustomPainter {
     }
     final geo = state._geo!;
 
-    // Sky — the one permitted subtle vertical gradient.
-    final skyPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [palette.sky, palette.skyLow],
-        stops: const [0.0, 0.78],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, skyPaint);
-
-    // Dither the sky to smooth the gradient's 8-bit banding. Drawn before the
-    // mountains, so only the open sky carries it; the silhouettes paint over.
-    final dither = _ditherTile;
-    if (dither != null) {
-      final identity = Float64List.fromList(const <double>[
-        1, 0, 0, 0, //
-        0, 1, 0, 0,
-        0, 0, 1, 0,
-        0, 0, 0, 1,
-      ]);
-      canvas.drawRect(
-        Offset.zero & size,
-        Paint()
-          ..blendMode = BlendMode.overlay
-          ..shader = ui.ImageShader(
-              dither, TileMode.repeated, TileMode.repeated, identity),
-      );
+    // The static background (sky gradient + dither + night-sky stars) never
+    // changes between frames — only the parallax layers move — so record it once
+    // and replay it, instead of re-rasterizing a full-screen gradient and an
+    // overlay blend 60 times a second while the scene drifts. Rebuilt only when
+    // the geometry (size/map/seed), palette/theme, or dither availability change.
+    final bgKey = Object.hash(state._geoKey, palette, _ditherTile != null);
+    if (state._bg == null || state._bgKey != bgKey) {
+      state._bg?.dispose();
+      state._bg = _recordBackground(size, geo);
+      state._bgKey = bgKey;
     }
-
-    // Dark mode: a stationary scatter of stars across the night sky, sitting
-    // behind the mountains. Tones of the (light-in-dark) ink, so they read as
-    // pale stars over the deep background.
-    if (palette.brightness == Brightness.dark) {
-      for (final s in geo.bgStars) {
-        canvas.drawCircle(Offset(s.x, s.y), s.size,
-            Paint()..color = palette.ink.withValues(alpha: 0.3 + 0.45 * s.phase));
-      }
-    }
+    canvas.drawPicture(state._bg!);
 
     // Speed-lines: at extreme tiers the world itself conveys velocity.
     if (tierIndex >= 7 && state._velocity > 1 && animate) {
@@ -301,6 +296,50 @@ class _ScenePainter extends CustomPainter {
       canvas.drawPath(geo.layerPaths[i], Paint()..color = layerColors[i]);
       canvas.restore();
     }
+  }
+
+  /// Records the unchanging background — sky gradient, dither overlay, and the
+  /// stationary dark-mode starfield — into a [ui.Picture] for cheap replay each
+  /// frame. The moving parallax layers are drawn separately on top.
+  ui.Picture _recordBackground(Size size, _Geometry geo) {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Offset.zero & size);
+
+    // Sky — the one permitted subtle vertical gradient.
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [palette.sky, palette.skyLow],
+          stops: const [0.0, 0.78],
+        ).createShader(Offset.zero & size),
+    );
+
+    // Dither the sky to smooth the gradient's 8-bit banding. Drawn before the
+    // mountains, so only the open sky carries it; the silhouettes paint over.
+    final ditherShader = _ditherShader;
+    if (ditherShader != null) {
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()
+          ..blendMode = BlendMode.overlay
+          ..shader = ditherShader,
+      );
+    }
+
+    // Dark mode: a stationary scatter of stars across the night sky, sitting
+    // behind the mountains. Tones of the (light-in-dark) ink, so they read as
+    // pale stars over the deep background.
+    if (palette.brightness == Brightness.dark) {
+      for (final s in geo.bgStars) {
+        canvas.drawCircle(Offset(s.x, s.y), s.size,
+            Paint()..color = palette.ink.withValues(alpha: 0.3 + 0.45 * s.phase));
+      }
+    }
+
+    return recorder.endRecording();
   }
 
 
@@ -373,21 +412,16 @@ class _ScenePainter extends CustomPainter {
 
       final path = _layerPath(samples, w, h, spec.baseline, amp);
 
-      // Decor that belongs to (and scrolls with) a layer. (Tree canopies were
-      // removed — the round/oval blobs read as floating balls; each map's
-      // character now comes from its palette and ambient particles instead.)
+      // Decor that scrolls with a layer. (Tree canopies were removed — they read
+      // as floating balls; map character now comes from the palette.)
       if (map.terrain == Terrain.verticalGrove && (layer == 1 || layer == 2)) {
         _addStalks(path, layerRng, w, h, specs[layer], dense: layer == 2);
       }
       paths.add(path);
     }
 
-
-    final particles = _buildParticles(rng, w, h);
-
-    // The night-sky starfield (drawn only in dark mode): a stationary scatter
-    // of pale dots across the upper sky. Generated always, cheap, drawn never
-    // in light mode.
+    // Dark-mode-only night-sky starfield: a stationary scatter of pale dots
+    // across the upper sky. Always generated (cheap), drawn only in dark mode.
     final bgStars = <_Particle>[
       for (var i = 0; i < 40; i++)
         _Particle(
@@ -408,13 +442,8 @@ class _ScenePainter extends CustomPainter {
         ),
     ];
 
-    return _Geometry(paths, [for (final s in specs) s.parallax], particles,
-        bgStars, speedLines);
-  }
-
-  /// Spawns the ambient wind field — currently disabled/empty.
-  List<_Particle> _buildParticles(math.Random rng, double w, double h) {
-    return const <_Particle>[];
+    return _Geometry(
+        paths, [for (final s in specs) s.parallax], bgStars, speedLines);
   }
 
   /// Builds a closed silhouette path spanning 2× width (for seamless
@@ -496,11 +525,9 @@ class _ScenePainter extends CustomPainter {
     return [for (final v in base) (v * steps).floor() / steps];
   }
 
-  /// A coastal range of headlands and inlets dropping to the sea. Several drops
-  /// of varied position, width and depth — over finer upland relief — so the
-  /// shore reads as a living coastline rather than one cliff face looping past
-  /// as the scene scrolls. The carved inlets stay in the interior so both ends
-  /// remain upland and the profile still tiles seamlessly (see [_layerPath]).
+  /// A coastal range of headlands and inlets dropping to the sea. Inlets vary in
+  /// position/width/depth over finer upland relief, and stay in the interior so
+  /// both ends remain upland and the profile tiles seamlessly (see [_layerPath]).
   List<double> _plateau(math.Random rng, int n) {
     final top = _smoothNoise(rng, n, maxF: 5); // finer upland relief
     final inletCount = 3 + rng.nextInt(2); // 3–4 inlets
@@ -550,10 +577,9 @@ class _ScenePainter extends CustomPainter {
     final count = dense ? 9 : 6;
     final baseY = h * (spec.baseline + 0.01);
     for (var i = 0; i < count; i++) {
-      // Draw each stalk's randoms once, then place an identical copy in both
-      // tiles (x and x + w). The layer path spans 2× width and scrolls with a
-      // wrap at w, so the two tiles must match exactly — otherwise the grove
-      // visibly snaps to a new arrangement each time the scroll wraps.
+      // Draw each stalk's randoms once and place an identical copy in both tiles
+      // (x and x + w): the 2×-width path wraps at w, so the tiles must match or
+      // the grove snaps to a new arrangement on each wrap.
       final x = (i + 0.2 + rng.nextDouble() * 0.6) / count * w;
       final stalkW = h * (0.006 + rng.nextDouble() * 0.007);
       final stalkH = h * (0.10 + rng.nextDouble() * 0.13);
