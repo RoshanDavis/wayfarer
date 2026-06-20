@@ -55,7 +55,7 @@ class Palette {
       );
 }
 
-/// Builds the palette for a map. [cycle] is the number of completed 24-map
+/// Builds the palette for a map. [cycle] is the number of completed 25-map
 /// loops — later cycles shift the ramp slightly so revisited maps feel like a
 /// different time of day. [soften] (0..1) quiets the palette during breaks.
 Palette buildPalette({

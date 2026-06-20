@@ -24,6 +24,15 @@ enum SceneMotion { still, drifting }
 ui.Image? _ditherTile;
 bool _ditherRequested = false;
 
+// Identity colour matrix for the dither [ui.ImageShader]. It never changes, and
+// paint() runs every frame while the scene drifts, so allocate it once and share.
+final Float64List _ditherMatrix = Float64List.fromList(const <double>[
+  1, 0, 0, 0, //
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1,
+]);
+
 void _ensureDitherTile(VoidCallback onReady) {
   if (_ditherTile != null || _ditherRequested) return;
   _ditherRequested = true;
@@ -184,15 +193,13 @@ const _nearSpec = _LayerSpec(0.70, 0.016, 1.0);
 class _Geometry {
   final List<Path> layerPaths; // far → near, each spanning 2× width
   final List<double> parallax;
-  final List<_Particle> particles; // ambient effect for the map (see kind)
   final List<_Particle> bgStars; // stationary night-sky stars (dark mode only)
   final List<Rect> speedLines;
-  _Geometry(this.layerPaths, this.parallax, this.particles, this.bgStars,
-      this.speedLines);
+  _Geometry(this.layerPaths, this.parallax, this.bgStars, this.speedLines);
 }
 
-/// One ambient particle: a fixed spawn point plus a phase. How it actually
-/// moves and reads is decided per [MapParticle] kind at paint time.
+/// One scene dot: a fixed spawn point plus a phase. Used for the stationary
+/// dark-mode night-sky starfield.
 class _Particle {
   final double x;
   final double y;
@@ -246,18 +253,12 @@ class _ScenePainter extends CustomPainter {
     // mountains, so only the open sky carries it; the silhouettes paint over.
     final dither = _ditherTile;
     if (dither != null) {
-      final identity = Float64List.fromList(const <double>[
-        1, 0, 0, 0, //
-        0, 1, 0, 0,
-        0, 0, 1, 0,
-        0, 0, 0, 1,
-      ]);
       canvas.drawRect(
         Offset.zero & size,
         Paint()
           ..blendMode = BlendMode.overlay
           ..shader = ui.ImageShader(
-              dither, TileMode.repeated, TileMode.repeated, identity),
+              dither, TileMode.repeated, TileMode.repeated, _ditherMatrix),
       );
     }
 
@@ -383,8 +384,6 @@ class _ScenePainter extends CustomPainter {
     }
 
 
-    final particles = _buildParticles(rng, w, h);
-
     // The night-sky starfield (drawn only in dark mode): a stationary scatter
     // of pale dots across the upper sky. Generated always, cheap, drawn never
     // in light mode.
@@ -408,13 +407,8 @@ class _ScenePainter extends CustomPainter {
         ),
     ];
 
-    return _Geometry(paths, [for (final s in specs) s.parallax], particles,
-        bgStars, speedLines);
-  }
-
-  /// Spawns the ambient wind field — currently disabled/empty.
-  List<_Particle> _buildParticles(math.Random rng, double w, double h) {
-    return const <_Particle>[];
+    return _Geometry(
+        paths, [for (final s in specs) s.parallax], bgStars, speedLines);
   }
 
   /// Builds a closed silhouette path spanning 2× width (for seamless

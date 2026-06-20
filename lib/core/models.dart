@@ -84,16 +84,6 @@ class TimerState {
 
   static const idle = TimerState(phase: Phase.idle);
 
-  /// Total focus ms elapsed in the in-flight session as of [nowMs],
-  /// clamped to the planned session length.
-  int elapsedFocusMs(int nowMs) {
-    var elapsed = accumulatedFocusMs;
-    if (phase == Phase.focusRunning && segmentStartedAtMs != null) {
-      elapsed += (nowMs - segmentStartedAtMs!).clamp(0, plannedDurationMs);
-    }
-    return elapsed.clamp(0, plannedDurationMs);
-  }
-
   /// Remaining ms in the running or paused phase as of [nowMs]; 0 elsewhere.
   int remainingMs(int nowMs) {
     switch (phase) {
@@ -195,7 +185,7 @@ class RevealSequence {
   /// Ids of speed comparisons crossed this session.
   final List<String> comparisonIds;
 
-  /// Set when the map changed: the new map index (0..23).
+  /// Set when the map changed: the new map index (0..24).
   final int? newMapIndex;
 
   /// All badge ids awarded this session, in reveal order.
@@ -367,10 +357,6 @@ class GameState {
   static const initial = GameState();
 
   double get paceKmh => gm.paceKmh(level);
-
-  /// The break kind that follows the *next completed* focus session.
-  BreakKind get upcomingBreakKind =>
-      sessionIndexInSet == gm.kSessionsPerSet - 1 ? BreakKind.long : BreakKind.short;
 
   GameState copyWith({
     int? xpIntoLevel,

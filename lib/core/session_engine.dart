@@ -452,7 +452,7 @@ class Engine {
   /// at the long-break rate: between sessions (idle), after a finished session
   /// awaiting a break (focusComplete), after a finished break (breakComplete),
   /// and while a session is paused.
-  static bool _restsBetweenFocus(Phase phase) =>
+  static bool restsBetweenFocus(Phase phase) =>
       phase == Phase.idle ||
       phase == Phase.focusPaused ||
       phase == Phase.focusComplete ||
@@ -464,7 +464,7 @@ class Engine {
   /// so re-running it credits nothing new. A no-op (beyond anchoring the clock)
   /// for the running focus/break phases.
   static GameState _applyIdleRecovery(GameState s, int nowMs) {
-    if (!_restsBetweenFocus(s.timer.phase)) return s;
+    if (!restsBetweenFocus(s.timer.phase)) return s;
     final since = s.staminaSyncedAtMs;
     // First reconciliation (fresh or migrated state): anchor the clock without
     // crediting recovery for time before the app knew about it.

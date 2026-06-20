@@ -19,23 +19,6 @@ enum Terrain {
 /// Small structural decor layered onto a terrain (trees).
 enum MapDecor { none, loneTrees, orchardTrees }
 
-/// The subtle ambient particle effect that gives each map its own air —
-/// drifting pollen, blowing sand, sea spray, fireflies, rising embers, and so
-/// on. Always understated, and never falling (those read poorly). The night
-/// sky's stars are a separate, stationary dark-mode backdrop, not a per-map
-/// particle.
-enum MapParticle {
-  none,
-  pollen,
-  dust,
-  sand,
-  mist,
-  spray,
-  fireflies,
-  embers,
-  drift,
-}
-
 class WorldMap {
   final String name;
 
@@ -48,64 +31,39 @@ class WorldMap {
 
   final Terrain terrain;
   final MapDecor decor;
-  final MapParticle particle;
 
   const WorldMap(this.name, this.hue, this.saturation, this.terrain,
-      [this.decor = MapDecor.none, this.particle = MapParticle.none]);
+      [this.decor = MapDecor.none]);
 }
 
 /// The 25 maps, in journey order. The cycle loops with subtle variation.
 const List<WorldMap> kMaps = [
-  WorldMap('The Garden', 100, 0.42, Terrain.softHills, MapDecor.none,
-      MapParticle.pollen),
-  WorldMap('Prairie', 45, 0.55, Terrain.flatPlains, MapDecor.none,
-      MapParticle.dust),
-  WorldMap('Dune Sea', 36, 0.52, Terrain.dunes, MapDecor.none,
-      MapParticle.sand),
-  WorldMap('Pine Ridge', 150, 0.38, Terrain.jaggedTreeline, MapDecor.none,
-      MapParticle.mist),
-  WorldMap('Coastal Cliffs', 212, 0.38, Terrain.cliffsSea, MapDecor.none,
-      MapParticle.spray),
-  WorldMap('Canyon', 16, 0.52, Terrain.layeredMesas, MapDecor.none,
-      MapParticle.dust),
-  WorldMap('Wildflower Hills', 272, 0.36, Terrain.softHills, MapDecor.none,
-      MapParticle.pollen),
-  WorldMap('Salt Flats', 205, 0.10, Terrain.flatPlains, MapDecor.none,
-      MapParticle.mist),
-  WorldMap('Bamboo Grove', 160, 0.42, Terrain.verticalGrove, MapDecor.none,
-      MapParticle.none),
-  WorldMap('Misty Moors', 310, 0.13, Terrain.softHills, MapDecor.none,
-      MapParticle.mist),
-  WorldMap('Savanna', 38, 0.48, Terrain.flatPlains, MapDecor.loneTrees,
-      MapParticle.dust),
-  WorldMap('Fjords', 208, 0.44, Terrain.cliffsSea, MapDecor.none,
-      MapParticle.mist),
+  WorldMap('The Garden', 100, 0.42, Terrain.softHills),
+  WorldMap('Prairie', 45, 0.55, Terrain.flatPlains),
+  WorldMap('Dune Sea', 36, 0.52, Terrain.dunes),
+  WorldMap('Pine Ridge', 150, 0.38, Terrain.jaggedTreeline),
+  WorldMap('Coastal Cliffs', 212, 0.38, Terrain.cliffsSea),
+  WorldMap('Canyon', 16, 0.52, Terrain.layeredMesas),
+  WorldMap('Wildflower Hills', 272, 0.36, Terrain.softHills),
+  WorldMap('Salt Flats', 205, 0.10, Terrain.flatPlains),
+  WorldMap('Bamboo Grove', 160, 0.42, Terrain.verticalGrove),
+  WorldMap('Misty Moors', 310, 0.13, Terrain.softHills),
+  WorldMap('Savanna', 38, 0.48, Terrain.flatPlains, MapDecor.loneTrees),
+  WorldMap('Fjords', 208, 0.44, Terrain.cliffsSea),
   WorldMap('Blossom Orchard', 345, 0.40, Terrain.softHills,
-      MapDecor.orchardTrees, MapParticle.pollen),
-  WorldMap('Sandstone Mesa', 10, 0.52, Terrain.layeredMesas, MapDecor.none,
-      MapParticle.dust),
-  WorldMap('Rice Terraces', 175, 0.42, Terrain.steppedHills, MapDecor.none,
-      MapParticle.mist),
-  WorldMap('Tundra', 195, 0.32, Terrain.flatPlains, MapDecor.none,
-      MapParticle.none),
-  WorldMap('Hillside Grove', 72, 0.36, Terrain.softHills, MapDecor.orchardTrees,
-      MapParticle.pollen),
-  WorldMap('Volcanic Fields', 12, 0.18, Terrain.jaggedRidges, MapDecor.none,
-      MapParticle.embers),
-  WorldMap('Glacier Pass', 187, 0.46, Terrain.jaggedRidges, MapDecor.none,
-      MapParticle.mist),
-  WorldMap('Eroded Hills', 14, 0.52, Terrain.layeredMesas, MapDecor.none,
-      MapParticle.dust),
-  WorldMap('Mangrove Delta', 155, 0.38, Terrain.flatPlains, MapDecor.none,
-      MapParticle.fireflies),
-  WorldMap('Night Desert', 255, 0.42, Terrain.dunes, MapDecor.none,
-      MapParticle.none),
-  WorldMap('Starlit Steppe', 265, 0.42, Terrain.flatPlains, MapDecor.none,
-      MapParticle.none),
-  WorldMap('The Stratosphere', 228, 0.38, Terrain.cloudLayers, MapDecor.none,
-      MapParticle.drift),
-  WorldMap('Maple Wood', 28, 0.50, Terrain.jaggedTreeline, MapDecor.none,
-      MapParticle.pollen),
+      MapDecor.orchardTrees),
+  WorldMap('Sandstone Mesa', 10, 0.52, Terrain.layeredMesas),
+  WorldMap('Rice Terraces', 175, 0.42, Terrain.steppedHills),
+  WorldMap('Tundra', 195, 0.32, Terrain.flatPlains),
+  WorldMap('Hillside Grove', 72, 0.36, Terrain.softHills, MapDecor.orchardTrees),
+  WorldMap('Volcanic Fields', 12, 0.18, Terrain.jaggedRidges),
+  WorldMap('Glacier Pass', 187, 0.46, Terrain.jaggedRidges),
+  WorldMap('Eroded Hills', 14, 0.52, Terrain.layeredMesas),
+  WorldMap('Mangrove Delta', 155, 0.38, Terrain.flatPlains),
+  WorldMap('Night Desert', 255, 0.42, Terrain.dunes),
+  WorldMap('Starlit Steppe', 265, 0.42, Terrain.flatPlains),
+  WorldMap('The Stratosphere', 228, 0.38, Terrain.cloudLayers),
+  WorldMap('Maple Wood', 28, 0.50, Terrain.jaggedTreeline),
 ];
 
 /// Index into [kMaps] for a player at [level]. The map advances every level and

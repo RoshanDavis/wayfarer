@@ -280,7 +280,7 @@ class AppController extends ChangeNotifier {
         phase == Phase.focusRunning || phase == Phase.breakRunning;
     // While resting between sessions, tick to accrue passive idle recovery so
     // the stamina bar climbs live — until it tops out.
-    final recovering = _restingPhase(phase) &&
+    final recovering = Engine.restsBetweenFocus(phase) &&
         _state.staminaSyncedAtMs > 0 &&
         _state.stamina < gm.kMaxStamina;
     if (_foreground && (running || recovering)) {
@@ -291,12 +291,6 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  static bool _restingPhase(Phase phase) =>
-      phase == Phase.idle ||
-      phase == Phase.focusPaused ||
-      phase == Phase.focusComplete ||
-      phase == Phase.breakComplete;
-
   void _tick() {
     final t = _state.timer;
     final running =
@@ -304,7 +298,7 @@ class AppController extends ChangeNotifier {
     if (!running) {
       // Resting: accrue idle recovery. Deterministic from the persisted sync
       // point, so we update in-memory and notify without a per-second write.
-      if (_restingPhase(t.phase) && _state.stamina < gm.kMaxStamina) {
+      if (Engine.restsBetweenFocus(t.phase) && _state.stamina < gm.kMaxStamina) {
         final next = Engine.reconstruct(_state, nowMs);
         if (!identical(next, _state)) {
           _state = next;
