@@ -554,6 +554,15 @@ class _ScrollThroughState extends State<_ScrollThrough> {
   }
 
   @override
+  void dispose() {
+    // The control overlay rebuilds across timer phases; if it unmounts mid-drag,
+    // cancel so the scroll position isn't left with a dangling drag activity.
+    _drag?.cancel();
+    _drag = null;
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     // Opaque so the detector spans the full width of its (full-width) child,
     // catching drags across the whole band rather than only where the ring and
