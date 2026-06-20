@@ -10,6 +10,7 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show Drag;
 import 'package:flutter/widgets.dart';
 
 import '../../app/app_controller.dart';
@@ -211,7 +212,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             );
           },
-          child: _ControlArea(state: s, controller: controller),
+          child: _ControlArea(state: s, controller: controller, scroll: _scroll),
         ),
         // Settings gear, always reachable.
         Positioned(
@@ -488,21 +489,92 @@ String? _milestoneLine(RevealSequence r) {
 class _ControlArea extends StatelessWidget {
   final GameState state;
   final AppController controller;
-  const _ControlArea({required this.state, required this.controller});
+  final ScrollController scroll;
+  const _ControlArea(
+      {required this.state, required this.controller, required this.scroll});
 
   @override
   Widget build(BuildContext context) {
-    // Compact block (104 ring + 42 link = 146); the overlay places it.
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _ControlFor(state: state, controller: controller),
-        SizedBox(
-          height: 42,
-          child:
-              Center(child: _LinkFor(state: state, controller: controller)),
-        ),
-      ],
+    // Compact block (104 ring + 42 link = 146); the overlay places it. The
+    // Column fills the full width (the overlay pins left:0/right:0), and
+    // _ScrollThrough catches drags across that whole horizontal band — not just
+    // on the ring — forwarding them to the page so the entire strip scrolls.
+    return _ScrollThrough(
+      controller: scroll,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ControlFor(state: state, controller: controller),
+          SizedBox(
+            height: 42,
+            child:
+                Center(child: _LinkFor(state: state, controller: controller)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Forwards vertical drags anywhere on its child straight to [controller]'s
+/// scroll position. The control floats in a `Positioned` overlay above the
+/// `CustomScrollView` (a separate hit-test branch), so the whole horizontal
+/// band it occupies — ring, link, and the empty space either side — would
+/// otherwise be a dead zone for scrolling. Driving the position via
+/// `ScrollPosition.drag` gives proper fling ballistics for free; a still touch
+/// still falls through to the ring/link tap (drag only wins once the finger
+/// moves), so the buttons keep working.
+class _ScrollThrough extends StatefulWidget {
+  final ScrollController controller;
+  final Widget child;
+  const _ScrollThrough({required this.controller, required this.child});
+
+  @override
+  State<_ScrollThrough> createState() => _ScrollThroughState();
+}
+
+class _ScrollThroughState extends State<_ScrollThrough> {
+  Drag? _drag;
+
+  void _onStart(DragStartDetails details) {
+    if (!widget.controller.hasClients) return;
+    _drag = widget.controller.position.drag(details, () => _drag = null);
+  }
+
+  void _onUpdate(DragUpdateDetails details) => _drag?.update(details);
+
+  void _onEnd(DragEndDetails details) {
+    _drag?.end(details);
+    _drag = null;
+  }
+
+  void _onCancel() {
+    _drag?.cancel();
+    _drag = null;
+  }
+
+  @override
+  void dispose() {
+    // The control overlay rebuilds across timer phases; if it unmounts mid-drag,
+    // cancel so the scroll position isn't left with a dangling drag activity.
+    _drag?.cancel();
+    _drag = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Opaque so the detector spans the full width of its (full-width) child,
+    // catching drags across the whole band rather than only where the ring and
+    // link actually paint. Taps still reach those buttons (descendants in the
+    // same gesture arena win a stationary press over the drag).
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragStart: _onStart,
+      onVerticalDragUpdate: _onUpdate,
+      onVerticalDragEnd: _onEnd,
+      onVerticalDragCancel: _onCancel,
+      child: widget.child,
     );
   }
 }
