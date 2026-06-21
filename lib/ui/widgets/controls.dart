@@ -37,38 +37,46 @@ class _BigControlState extends State<BigControl> {
     final p = PaletteScope.of(context);
     final alpha = widget.subdued ? 0.45 : 1.0;
     return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+      // Translucent (not opaque) so this floating control doesn't block the
+      // scroll surface behind it: taps land here, but drags and the mouse wheel
+      // fall through and scroll, exactly like a button inside a scroll view. The
+      // ring + label are wrapped in IgnorePointer so the painted content doesn't
+      // hit-test and re-block that fall-through (a translucent detector still
+      // reports a hit, and blocks, wherever its child is hit-testable).
+      behavior: HitTestBehavior.translucent,
       onTapDown: (_) => setState(() => _pressed = true),
       onTapCancel: () => setState(() => _pressed = false),
       onTapUp: (_) {
         setState(() => _pressed = false);
         widget.onTap();
       },
-      child: AnimatedScale(
-        scale: _pressed ? 0.955 : 1.0,
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOut,
-        child: SizedBox(
-          width: 104,
-          height: 104,
-          child: CustomPaint(
-            painter: _RingPainter(
-              ring: p.ink.withValues(alpha: 0.8 * alpha),
-              fill: p.ink.withValues(alpha: 0.05 * alpha),
-              glyph: widget.glyph,
-              glyphColor: p.ink.withValues(alpha: alpha),
+      child: IgnorePointer(
+        child: AnimatedScale(
+          scale: _pressed ? 0.955 : 1.0,
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          child: SizedBox(
+            width: 104,
+            height: 104,
+            child: CustomPaint(
+              painter: _RingPainter(
+                ring: p.ink.withValues(alpha: 0.8 * alpha),
+                fill: p.ink.withValues(alpha: 0.05 * alpha),
+                glyph: widget.glyph,
+                glyphColor: p.ink.withValues(alpha: alpha),
+              ),
+              child: widget.glyph == BigControlGlyph.none
+                  ? Center(
+                      child: Text(
+                        widget.label.toUpperCase(),
+                        textAlign: TextAlign.center,
+                        style: Type.label(p,
+                            size: 13,
+                            color: p.ink.withValues(alpha: 0.9 * alpha)),
+                      ),
+                    )
+                  : null,
             ),
-            child: widget.glyph == BigControlGlyph.none
-                ? Center(
-                    child: Text(
-                      widget.label.toUpperCase(),
-                      textAlign: TextAlign.center,
-                      style: Type.label(p,
-                          size: 13,
-                          color: p.ink.withValues(alpha: 0.9 * alpha)),
-                    ),
-                  )
-                : null,
           ),
         ),
       ),
@@ -136,14 +144,19 @@ class QuietLink extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = PaletteScope.of(context);
     return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+      // Translucent + IgnorePointer'd content so drags and the wheel fall
+      // through to the scroll surface behind this floating link; only taps land
+      // here (see [BigControl] for the full rationale).
+      behavior: HitTestBehavior.translucent,
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Text(
-          label.toUpperCase(),
-          style:
-              Type.label(p, size: 11, color: p.ink.withValues(alpha: alpha)),
+      child: IgnorePointer(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Text(
+            label.toUpperCase(),
+            style:
+                Type.label(p, size: 11, color: p.ink.withValues(alpha: alpha)),
+          ),
         ),
       ),
     );

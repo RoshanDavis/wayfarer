@@ -19,6 +19,22 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  image: ^4.8.0 # used by tool/gen_windows_icon.dart
 
 flutter:
   uses-material-design: true
+
+# App icons are generated from the shared source mark (assets/icon.png):
+#   - Web favicon/PWA icons: `dart run flutter_launcher_icons` (config below).
+#   - Windows .exe icon: `dart run tool/gen_windows_icon.dart` — a proper
+#     multi-resolution .ico (flutter_launcher_icons only emits a single 256px
+#     image, which downscales poorly at taskbar/Explorer sizes).
+# Android keeps its hand-crafted adaptive (vector) icon, so neither touches it.
+flutter_launcher_icons:
+  image_path: "assets/icon.png"
+  web:
+    generate: true
+    image_path: "assets/icon.png"
+    background_color: "#ECEAE6" # matches the existing manifest
+    theme_color: "#ECEAE6"

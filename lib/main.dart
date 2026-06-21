@@ -80,6 +80,7 @@ class _WayfarerAppState extends State<WayfarerApp> with WidgetsBindingObserver {
       child: MaterialApp(
         title: 'Wayfarer',
         debugShowCheckedModeBanner: false,
+        scrollBehavior: const _NoScrollbar(),
         // The palette is provided above the Navigator so every route —
         // Horizon, the reveal, Journey, Settings — shares the same animated
         // tonal ramp.
@@ -137,6 +138,21 @@ class _WayfarerAppState extends State<WayfarerApp> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+/// Hides the scrollbar app-wide. On desktop and web MaterialScrollBehavior
+/// would otherwise draw one over every scroll surface (home and settings); the
+/// surfaces scroll by wheel, drag and trackpad, and the Journey rising over the
+/// world is the affordance — a bar would just clutter the calm scene.
+class _NoScrollbar extends MaterialScrollBehavior {
+  const _NoScrollbar();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => child;
 }
 
 /// The home route — a single scrollable surface. Rebuilds on every state

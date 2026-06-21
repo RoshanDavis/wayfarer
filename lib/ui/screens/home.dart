@@ -10,8 +10,6 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
-import 'package:flutter/gestures.dart' show Drag;
 import 'package:flutter/widgets.dart';
 
 import '../../app/app_controller.dart';
@@ -119,18 +117,12 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    // A draggable scrollbar at the window edge on desktop/web; phones keep their
-    // clean, bar-free scroll.
-    final pf = defaultTargetPlatform;
-    final desktopChrome =
-        kIsWeb ||
-        pf == TargetPlatform.windows ||
-        pf == TargetPlatform.linux ||
-        pf == TargetPlatform.macOS;
-
     // The interactive scroll surface fills the window so its backgrounds are
     // full-width; each readable block is scaled and centred (see [ContentBox]).
-    Widget scrollSurface = CustomScrollView(
+    // No scrollbar: the surface scrolls by wheel, drag and trackpad, and the
+    // Journey rising over the world is the affordance (the app-wide
+    // scrollBehavior in main.dart suppresses Material's desktop scrollbar).
+    final scrollSurface = CustomScrollView(
       controller: _scroll,
       physics: const BouncingScrollPhysics(),
       slivers: [
@@ -162,20 +154,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ],
     );
-    // Desktop/web get a draggable scrollbar at the window edge; phones keep
-    // their clean, bar-free scroll.
-    if (desktopChrome) {
-      scrollSurface = RawScrollbar(
-        controller: _scroll,
-        thumbVisibility: true,
-        interactive: true,
-        thumbColor: p.ink.withValues(alpha: 0.35),
-        thickness: 6,
-        radius: const Radius.circular(3),
-        child: scrollSurface,
-      );
-    }
-
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -233,33 +211,47 @@ class _HomeScreenState extends State<HomeScreen> {
               top: ringTop - topPad,
               left: 0,
               right: 0,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      p.sky.withValues(alpha: 0),
-                      p.sky.withValues(alpha: cushion),
-                      p.sky.withValues(alpha: cushion),
-                      p.sky.withValues(alpha: 0),
-                    ],
-                    stops: const [0.0, 0.18, 0.82, 1.0],
+              child: Stack(
+                children: [
+                  // The cushion is purely decorative: ignore pointers so scroll
+                  // (drag and wheel) reaches the surface behind across the full
+                  // width. A plain DecoratedBox hit-tests true edge to edge and
+                  // would otherwise swallow input over the whole strip.
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              p.sky.withValues(alpha: 0),
+                              p.sky.withValues(alpha: cushion),
+                              p.sky.withValues(alpha: cushion),
+                              p.sky.withValues(alpha: 0),
+                            ],
+                            stops: const [0.0, 0.18, 0.82, 1.0],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.only(top: topPad, bottom: bottomPad),
-                  child: child,
-                ),
+                  Padding(
+                    padding: EdgeInsets.only(top: topPad, bottom: bottomPad),
+                    child: child,
+                  ),
+                ],
               ),
             );
           },
+          // The control floats over the scroll surface but never captures
+          // scrolling: the cushion ignores pointers and the buttons are
+          // translucent (see BigControl/QuietLink), so drags and the wheel pass
+          // straight through to the surface — only taps land on the buttons.
+          // Every input type then scrolls uniformly across the full width, with
+          // the native Scrollable doing the work (no manual forwarding).
           child: ContentBox(
-            child: _ControlArea(
-              state: s,
-              controller: controller,
-              scroll: _scroll,
-            ),
+            child: _ControlArea(state: s, controller: controller),
           ),
         ),
         // Settings gear, pinned to the window's top-right corner.
@@ -557,89 +549,23 @@ String? _milestoneLine(RevealSequence r) {
 class _ControlArea extends StatelessWidget {
   final GameState state;
   final AppController controller;
-  final ScrollController scroll;
-  const _ControlArea({
-    required this.state,
-    required this.controller,
-    required this.scroll,
-  });
+  const _ControlArea({required this.state, required this.controller});
 
   @override
   Widget build(BuildContext context) {
-    // Compact 146px block, placed by the overlay. _ScrollThrough catches drags
-    // across the whole full-width band (not just the ring) and forwards them.
-    return _ScrollThrough(
-      controller: scroll,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ControlFor(state: state, controller: controller),
-          SizedBox(
-            height: 42,
-            child: Center(
-              child: _LinkFor(state: state, controller: controller),
-            ),
+    // Compact 146px block, centred by the overlay's ContentBox and wrapped by
+    // its full-width _ScrollThrough so the whole row forwards scroll.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ControlFor(state: state, controller: controller),
+        SizedBox(
+          height: 42,
+          child: Center(
+            child: _LinkFor(state: state, controller: controller),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Forwards vertical drags anywhere on its child to [controller]'s scroll
-/// position. The control floats in a `Positioned` overlay (a separate hit-test
-/// branch), so its band would otherwise be a scroll dead zone. Driving the
-/// position via `ScrollPosition.drag` gives fling ballistics for free; a still
-/// touch falls through to the ring/link tap (drag wins only once the finger moves).
-class _ScrollThrough extends StatefulWidget {
-  final ScrollController controller;
-  final Widget child;
-  const _ScrollThrough({required this.controller, required this.child});
-
-  @override
-  State<_ScrollThrough> createState() => _ScrollThroughState();
-}
-
-class _ScrollThroughState extends State<_ScrollThrough> {
-  Drag? _drag;
-
-  void _onStart(DragStartDetails details) {
-    if (!widget.controller.hasClients) return;
-    _drag = widget.controller.position.drag(details, () => _drag = null);
-  }
-
-  void _onUpdate(DragUpdateDetails details) => _drag?.update(details);
-
-  void _onEnd(DragEndDetails details) {
-    _drag?.end(details);
-    _drag = null;
-  }
-
-  void _onCancel() {
-    _drag?.cancel();
-    _drag = null;
-  }
-
-  @override
-  void dispose() {
-    // The control overlay rebuilds across timer phases; if it unmounts mid-drag,
-    // cancel so the scroll position isn't left with a dangling drag activity.
-    _drag?.cancel();
-    _drag = null;
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Opaque so the detector spans the full-width child, catching drags across
-    // the whole band. Taps still reach the buttons (a stationary press wins).
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onVerticalDragStart: _onStart,
-      onVerticalDragUpdate: _onUpdate,
-      onVerticalDragEnd: _onEnd,
-      onVerticalDragCancel: _onCancel,
-      child: widget.child,
+        ),
+      ],
     );
   }
 }
