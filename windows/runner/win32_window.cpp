@@ -207,6 +207,17 @@ Win32Window::MessageHandler(HWND hwnd,
       return 0;
     }
 
+    case WM_GETMINMAXINFO: {
+      // Enforce a minimum window size so the portrait UI never collapses. The
+      // logical minimum is scaled to the window's current DPI.
+      auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
+      const UINT dpi = GetDpiForWindow(hwnd);
+      const double scale = dpi ? dpi / 96.0 : 1.0;
+      info->ptMinTrackSize.x = static_cast<LONG>(360 * scale);
+      info->ptMinTrackSize.y = static_cast<LONG>(640 * scale);
+      return 0;
+    }
+
     case WM_ACTIVATE:
       if (child_content_ != nullptr) {
         SetFocus(child_content_);

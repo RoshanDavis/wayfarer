@@ -4,6 +4,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter/widgets.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -154,45 +155,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 40),
 
-                    _ToggleRow(
-                      label: 'Notifications',
-                      detail: 'A quiet status while a session runs, and an '
-                          'alert when it ends.',
-                      value: settings.notificationsEnabled,
-                      onChanged: controller.setNotificationsEnabled,
-                    ),
-                    // Reflects the live OS permission state: shown when the user
-                    // wants alerts but Android is blocking them, with a one-tap
-                    // route into system settings to re-enable.
-                    ListenableBuilder(
-                      listenable: controller,
-                      builder: (context, _) {
-                        final blocked =
-                            controller.state.settings.notificationsEnabled &&
-                                !controller.notificationsAuthorized;
-                        if (!blocked) return const SizedBox.shrink();
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Notifications are blocked by Android.',
-                                style: Type.body(p,
-                                    size: 12,
-                                    color: p.inkSoft.withValues(alpha: 0.8)),
-                              ),
-                              const SizedBox(height: 14),
-                              _OutlineButton(
-                                label: 'OPEN NOTIFICATION SETTINGS',
-                                onTap: controller.openNotificationSettings,
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 48),
+                    // The web has no notification backend, so the controls are
+                    // hidden there entirely (the timer/game are unaffected). On
+                    // Android, Windows and Linux the toggle is shown.
+                    if (!kIsWeb) ...[
+                      _ToggleRow(
+                        label: 'Notifications',
+                        detail: 'A quiet status while a session runs, and an '
+                            'alert when it ends.',
+                        value: settings.notificationsEnabled,
+                        onChanged: controller.setNotificationsEnabled,
+                      ),
+                      // Reflects the live OS permission state: shown when the
+                      // user wants alerts but Android is blocking them, with a
+                      // one-tap route into system settings to re-enable. Desktop
+                      // backends have no permission gate, so this stays hidden
+                      // there (notificationsAuthorized is true once initialized).
+                      ListenableBuilder(
+                        listenable: controller,
+                        builder: (context, _) {
+                          final blocked =
+                              controller.state.settings.notificationsEnabled &&
+                                  !controller.notificationsAuthorized;
+                          if (!blocked) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Notifications are blocked by Android.',
+                                  style: Type.body(p,
+                                      size: 12,
+                                      color: p.inkSoft.withValues(alpha: 0.8)),
+                                ),
+                                const SizedBox(height: 14),
+                                _OutlineButton(
+                                  label: 'OPEN NOTIFICATION SETTINGS',
+                                  onTap: controller.openNotificationSettings,
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 48),
+                    ],
 
                     Text('DATA', style: Type.label(p, size: 10)),
                     const SizedBox(height: 14),

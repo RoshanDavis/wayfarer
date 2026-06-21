@@ -94,7 +94,10 @@ class _HomeScreenState extends State<HomeScreen> {
     // its max size on wider/tablet screens, where it would otherwise overflow
     // the fixed header by ~1px. Imperceptible on phones (see-through lower edge).
     final headerHeight = topInset + 240;
-    _panelHeight = screenH - headerHeight;
+    // Floor at 0: on the first web frame MediaQuery height is momentarily 0 (and
+    // a very short window could be < headerHeight), which would make the panel
+    // negative and blow up the clamp bounds and SizedBox heights derived from it.
+    _panelHeight = (screenH - headerHeight).clamp(0.0, double.infinity);
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     // Only schedule the post-frame auto-scroll when the phase actually changed —

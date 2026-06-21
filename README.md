@@ -52,8 +52,24 @@ tinted by the map's single accent hue (light ramp / inverted dark ramp).
 ```
 flutter pub get
 flutter test
-flutter build apk --release
 ```
 
-Android (minSdk 26+), portrait. iOS/web later from the same codebase — all
-game logic is platform-agnostic.
+All game logic is platform-agnostic; the same codebase targets every platform.
+
+```
+flutter build apk --release        # Android (minSdk 26+)
+flutter build web --release        # Web (PWA)
+flutter build windows --release    # Windows desktop (needs VS "Desktop development with C++")
+flutter build linux --release      # Linux desktop (build on Linux/WSL2 — no cross-compile)
+```
+
+Notifications use the system backend on Android, Windows and Linux; the web has
+no notification backend, so those controls are hidden there (the timer and game
+are unaffected). On phones the UI is portrait; on desktop/web wide windows it
+stays a centred phone-width column.
+
+**iOS / macOS** require a Mac with Xcode and cannot be built on Windows or Linux.
+The codebase is ready for them (scaffold with `flutter create --platforms=ios,macos .`
+on a Mac); build via a Mac or cloud macOS CI (e.g. Codemagic, GitHub Actions
+`macos` runners). iOS device/store distribution also needs an Apple Developer
+account.
