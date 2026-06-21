@@ -37,8 +37,7 @@ class WayfarerApp extends StatefulWidget {
   State<WayfarerApp> createState() => _WayfarerAppState();
 }
 
-class _WayfarerAppState extends State<WayfarerApp>
-    with WidgetsBindingObserver {
+class _WayfarerAppState extends State<WayfarerApp> with WidgetsBindingObserver {
   bool _foreground = true;
 
   AppController get controller => widget.controller;
@@ -91,19 +90,23 @@ class _WayfarerAppState extends State<WayfarerApp>
             final brightness = switch (s.settings.theme) {
               ThemePreference.light => Brightness.light,
               ThemePreference.dark => Brightness.dark,
-              ThemePreference.system =>
-                MediaQuery.platformBrightnessOf(context),
+              ThemePreference.system => MediaQuery.platformBrightnessOf(
+                context,
+              ),
             };
 
-            final softened = s.timer.phase == Phase.breakRunning ||
+            final softened =
+                s.timer.phase == Phase.breakRunning ||
                 s.timer.phase == Phase.breakComplete;
 
             // Accent starts at a random place each open (accentSeed) and steps
             // through the palettes per completed session; PaletteTransition
             // crossfades to the new colour.
             final palette = buildPalette(
-              map: accentForSession(s.sessionsCompleted,
-                  seed: controller.accentSeed),
+              map: accentForSession(
+                s.sessionsCompleted,
+                seed: controller.accentSeed,
+              ),
               brightness: brightness,
               cycle: mapCycleForLevel(s.level),
               soften: softened ? 1 : 0,
@@ -124,112 +127,13 @@ class _WayfarerAppState extends State<WayfarerApp>
                 // nothing of stock Material is ever visible.
                 child: Material(
                   type: MaterialType.transparency,
-                  // On wide desktop/web windows, scale the portrait UI up to
-                  // fill the window at a tablet-like aspect; on phones it passes
-                  // through unchanged.
-                  child: TickerMode(
-                    enabled: _foreground,
-                    child: _AdaptiveShell(
-                      skyColor: palette.sky,
-                      groundColor: palette.near,
-                      child: child!,
-                    ),
-                  ),
+                  child: TickerMode(enabled: _foreground, child: child!),
                 ),
               ),
             );
           },
         ),
         home: _Root(controller: controller),
-      ),
-    );
-  }
-}
-
-/// Scales the phone-designed UI *up* to fill larger windows (desktop, web, big
-/// tablets) instead of leaving it small with empty margins. The app is always
-/// laid out at the same phone design width and then uniformly scaled to the
-/// window — so a Pixel-tablet-sized window shows the same layout, just bigger,
-/// the way a phone app looks scaled up on a tablet.
-///
-/// To avoid the layout collapsing to a short/landscape shape on a wide monitor,
-/// the laid-out canvas is kept within a portrait-tablet aspect band: the window
-/// is filled edge-to-edge for any aspect inside the band, and only letterboxed
-/// for aspect ratios outside it. The letterbox is a sky→ground vertical gradient
-/// so the margins read as the scene's atmosphere continuing, not dead bars.
-/// Phones (≤ the design width) pass straight through, so mobile is unchanged.
-class _AdaptiveShell extends StatelessWidget {
-  final Color skyColor;
-  final Color groundColor;
-  final Widget child;
-  const _AdaptiveShell({
-    required this.skyColor,
-    required this.groundColor,
-    required this.child,
-  });
-
-  /// The width the UI is designed and laid out at. At or below this the child
-  /// passes through untouched (phones); above it the child is scaled up.
-  static const double _designWidth = 480;
-
-  /// Portrait-tablet aspect band (width / height) the laid-out canvas is held
-  /// within, so the design never becomes too tall-and-thin or too square.
-  static const double _minAspect = 0.50;
-  static const double _maxAspect = 0.75;
-
-  @override
-  Widget build(BuildContext context) {
-    final mq = MediaQuery.of(context);
-    final win = mq.size;
-    // Phones: leave the native layout exactly as designed.
-    if (win.width <= _designWidth || win.height <= 0) return child;
-
-    final winAspect = win.width / win.height;
-    final designAspect = winAspect.clamp(_minAspect, _maxAspect);
-    final designHeight = _designWidth / designAspect;
-    // Uniform scale that fits the design canvas into the window (contain).
-    final wScale = win.width / _designWidth;
-    final hScale = win.height / designHeight;
-    final scale = wScale < hScale ? wScale : hScale;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [skyColor, groundColor],
-        ),
-      ),
-      child: Center(
-        // The outer box has the design's exact aspect, so BoxFit.fill scales
-        // without distortion; any leftover window area shows the gradient behind.
-        child: SizedBox(
-          width: _designWidth * scale,
-          height: designHeight * scale,
-          // An explicit ClipRect (not FittedBox.clipBehavior, which only clips
-          // on detected layout overflow) contains the landscape painters'
-          // parallax overflow so it can't bleed into the gradient margins.
-          child: ClipRect(
-            child: FittedBox(
-              fit: BoxFit.fill,
-              child: SizedBox(
-                width: _designWidth,
-                height: designHeight,
-                // Report the design size to the app so its MediaQuery-derived
-                // metrics (panel height, insets) match the box it's laid in.
-                child: MediaQuery(
-                  data: mq.copyWith(
-                    size: Size(_designWidth, designHeight),
-                    padding: EdgeInsets.zero,
-                    viewPadding: EdgeInsets.zero,
-                    viewInsets: EdgeInsets.zero,
-                  ),
-                  child: child,
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

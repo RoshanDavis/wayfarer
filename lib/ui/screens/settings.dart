@@ -14,6 +14,7 @@ import '../../core/game_math.dart' as gm;
 import '../../core/models.dart';
 import '../../app/theme.dart';
 import '../app_scope.dart';
+import '../layout.dart';
 import '../widgets/controls.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -33,8 +34,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Optional support link. Opens in the external browser and unlocks nothing
   // inside the app, so Wayfarer stays free with no in-app purchases.
-  static final Uri _supportUrl =
-      Uri.parse('https://buymeacoffee.com/monsoonwinds');
+  static final Uri _supportUrl = Uri.parse(
+    'https://buymeacoffee.com/monsoonwinds',
+  );
 
   @override
   void initState() {
@@ -69,6 +71,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final p = PaletteScope.of(context);
 
     return ColoredBox(
+      // The flat sky fills the window; the controls sit in a centred,
+      // bounded-width column so they don't stretch huge on wide screens.
       color: p.sky,
       child: SafeArea(
         child: Column(
@@ -76,176 +80,198 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             // Centered title with a back chevron. The +8 top pad aligns the
             // title's line-top with the Focus header on home, so the two line up
-            // when navigating between screens.
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: SizedBox(
-                height: 48,
-                child: Stack(
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: QuietLink(
+            // when navigating between screens. Scaled and centred on wide windows.
+            ContentBox(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  height: 48,
+                  child: Stack(
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: QuietLink(
                           label: '‹  Back',
-                          onTap: () => Navigator.of(context).maybePop()),
-                    ),
-                    Center(
-                      child: Text('SETTINGS', style: Type.label(p, size: 12)),
-                    ),
-                  ],
+                          onTap: () => Navigator.of(context).maybePop(),
+                        ),
+                      ),
+                      Center(
+                        child: Text('SETTINGS', style: Type.label(p, size: 12)),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(34, 24, 34, 48),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('TIMERS', style: Type.label(p, size: 10)),
-                    const SizedBox(height: 18),
-                    _DurationRow(
-                      label: 'Focus',
-                      minutes: settings.focusMinutes,
-                      min: gm.kFocusMinMinutes,
-                      max: gm.kFocusMaxMinutes,
-                      step: gm.kFocusStepMinutes,
-                      onChanged: (m) =>
-                          controller.setDurations(focusMinutes: m),
-                    ),
-                    const SizedBox(height: 18),
-                    _DurationRow(
-                      label: 'Short break',
-                      minutes: settings.shortBreakMinutes,
-                      min: gm.kShortBreakMinMinutes,
-                      max: gm.kShortBreakMaxMinutes,
-                      step: gm.kShortBreakStepMinutes,
-                      onChanged: (m) =>
-                          controller.setDurations(shortBreakMinutes: m),
-                    ),
-                    const SizedBox(height: 18),
-                    _DurationRow(
-                      label: 'Long break',
-                      minutes: settings.longBreakMinutes,
-                      min: gm.kLongBreakMinMinutes,
-                      max: gm.kLongBreakMaxMinutes,
-                      step: gm.kLongBreakStepMinutes,
-                      onChanged: (m) =>
-                          controller.setDurations(longBreakMinutes: m),
-                    ),
-                    const SizedBox(height: 44),
-
-                    Text('THEME', style: Type.label(p, size: 10)),
-                    const SizedBox(height: 14),
-                    Row(
+                child: ContentBox(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(34, 24, 34, 48),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        for (final pref in ThemePreference.values) ...[
-                          _ThemeOption(
-                            label: switch (pref) {
-                              ThemePreference.system => 'System',
-                              ThemePreference.light => 'Light',
-                              ThemePreference.dark => 'Dark',
-                            },
-                            selected: settings.theme == pref,
-                            onTap: () => controller.setTheme(pref),
+                        Text('TIMERS', style: Type.label(p, size: 10)),
+                        const SizedBox(height: 18),
+                        _DurationRow(
+                          label: 'Focus',
+                          minutes: settings.focusMinutes,
+                          min: gm.kFocusMinMinutes,
+                          max: gm.kFocusMaxMinutes,
+                          step: gm.kFocusStepMinutes,
+                          onChanged: (m) =>
+                              controller.setDurations(focusMinutes: m),
+                        ),
+                        const SizedBox(height: 18),
+                        _DurationRow(
+                          label: 'Short break',
+                          minutes: settings.shortBreakMinutes,
+                          min: gm.kShortBreakMinMinutes,
+                          max: gm.kShortBreakMaxMinutes,
+                          step: gm.kShortBreakStepMinutes,
+                          onChanged: (m) =>
+                              controller.setDurations(shortBreakMinutes: m),
+                        ),
+                        const SizedBox(height: 18),
+                        _DurationRow(
+                          label: 'Long break',
+                          minutes: settings.longBreakMinutes,
+                          min: gm.kLongBreakMinMinutes,
+                          max: gm.kLongBreakMaxMinutes,
+                          step: gm.kLongBreakStepMinutes,
+                          onChanged: (m) =>
+                              controller.setDurations(longBreakMinutes: m),
+                        ),
+                        const SizedBox(height: 44),
+
+                        Text('THEME', style: Type.label(p, size: 10)),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            for (final pref in ThemePreference.values) ...[
+                              _ThemeOption(
+                                label: switch (pref) {
+                                  ThemePreference.system => 'System',
+                                  ThemePreference.light => 'Light',
+                                  ThemePreference.dark => 'Dark',
+                                },
+                                selected: settings.theme == pref,
+                                onTap: () => controller.setTheme(pref),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 40),
+
+                        // The web has no notification backend, so the controls are
+                        // hidden there entirely (the timer/game are unaffected). On
+                        // Android, Windows and Linux the toggle is shown.
+                        if (!kIsWeb) ...[
+                          _ToggleRow(
+                            label: 'Notifications',
+                            detail:
+                                'A quiet status while a session runs, and an '
+                                'alert when it ends.',
+                            value: settings.notificationsEnabled,
+                            onChanged: controller.setNotificationsEnabled,
                           ),
-                          const SizedBox(width: 10),
+                          // Reflects the live OS permission state: shown when the
+                          // user wants alerts but Android is blocking them, with a
+                          // one-tap route into system settings to re-enable. Desktop
+                          // backends have no permission gate, so this stays hidden
+                          // there (notificationsAuthorized is true once initialized).
+                          ListenableBuilder(
+                            listenable: controller,
+                            builder: (context, _) {
+                              final blocked =
+                                  controller
+                                      .state
+                                      .settings
+                                      .notificationsEnabled &&
+                                  !controller.notificationsAuthorized;
+                              if (!blocked) return const SizedBox.shrink();
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 14),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Notifications are blocked by Android.',
+                                      style: Type.body(
+                                        p,
+                                        size: 12,
+                                        color: p.inkSoft.withValues(alpha: 0.8),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 14),
+                                    _OutlineButton(
+                                      label: 'OPEN NOTIFICATION SETTINGS',
+                                      onTap:
+                                          controller.openNotificationSettings,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 48),
                         ],
+
+                        Text('DATA', style: Type.label(p, size: 10)),
+                        const SizedBox(height: 14),
+                        _ResetButton(
+                          confirming: _confirmingReset,
+                          onTap: () {
+                            if (_confirmingReset) {
+                              _confirmTimer?.cancel();
+                              setState(() => _confirmingReset = false);
+                              controller.resetData();
+                            } else {
+                              setState(() => _confirmingReset = true);
+                              _confirmTimer = Timer(
+                                const Duration(seconds: 4),
+                                () {
+                                  if (mounted) {
+                                    setState(() => _confirmingReset = false);
+                                  }
+                                },
+                              );
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 48),
+
+                        Text('SUPPORT', style: Type.label(p, size: 10)),
+                        const SizedBox(height: 14),
+                        Text(
+                          'Wayfarer is free, with nothing to unlock. If it has '
+                          'helped your focus, you can leave a small tip — always '
+                          'optional, with no effect on the app.',
+                          style: Type.body(
+                            p,
+                            size: 12,
+                            color: p.inkSoft.withValues(alpha: 0.8),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _OutlineButton(
+                          label: 'BUY ME A COFFEE',
+                          onTap: _openSupport,
+                        ),
+                        const SizedBox(height: 48),
+
+                        Text('ABOUT', style: Type.label(p, size: 10)),
+                        const SizedBox(height: 14),
+                        Text(
+                          _version.isEmpty
+                              ? 'Wayfarer\n\nA calm pomodoro journey.'
+                              : 'Wayfarer $_version\n\nA calm pomodoro journey.',
+                          style: Type.body(p, size: 13, color: p.inkSoft),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 40),
-
-                    // The web has no notification backend, so the controls are
-                    // hidden there entirely (the timer/game are unaffected). On
-                    // Android, Windows and Linux the toggle is shown.
-                    if (!kIsWeb) ...[
-                      _ToggleRow(
-                        label: 'Notifications',
-                        detail: 'A quiet status while a session runs, and an '
-                            'alert when it ends.',
-                        value: settings.notificationsEnabled,
-                        onChanged: controller.setNotificationsEnabled,
-                      ),
-                      // Reflects the live OS permission state: shown when the
-                      // user wants alerts but Android is blocking them, with a
-                      // one-tap route into system settings to re-enable. Desktop
-                      // backends have no permission gate, so this stays hidden
-                      // there (notificationsAuthorized is true once initialized).
-                      ListenableBuilder(
-                        listenable: controller,
-                        builder: (context, _) {
-                          final blocked =
-                              controller.state.settings.notificationsEnabled &&
-                                  !controller.notificationsAuthorized;
-                          if (!blocked) return const SizedBox.shrink();
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Notifications are blocked by Android.',
-                                  style: Type.body(p,
-                                      size: 12,
-                                      color: p.inkSoft.withValues(alpha: 0.8)),
-                                ),
-                                const SizedBox(height: 14),
-                                _OutlineButton(
-                                  label: 'OPEN NOTIFICATION SETTINGS',
-                                  onTap: controller.openNotificationSettings,
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 48),
-                    ],
-
-                    Text('DATA', style: Type.label(p, size: 10)),
-                    const SizedBox(height: 14),
-                    _ResetButton(
-                      confirming: _confirmingReset,
-                      onTap: () {
-                        if (_confirmingReset) {
-                          _confirmTimer?.cancel();
-                          setState(() => _confirmingReset = false);
-                          controller.resetData();
-                        } else {
-                          setState(() => _confirmingReset = true);
-                          _confirmTimer =
-                              Timer(const Duration(seconds: 4), () {
-                            if (mounted) {
-                              setState(() => _confirmingReset = false);
-                            }
-                          });
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 48),
-
-                    Text('SUPPORT', style: Type.label(p, size: 10)),
-                    const SizedBox(height: 14),
-                    Text(
-                      'Wayfarer is free, with nothing to unlock. If it has '
-                      'helped your focus, you can leave a small tip — always '
-                      'optional, with no effect on the app.',
-                      style: Type.body(p,
-                          size: 12, color: p.inkSoft.withValues(alpha: 0.8)),
-                    ),
-                    const SizedBox(height: 16),
-                    _OutlineButton(label: 'BUY ME A COFFEE', onTap: _openSupport),
-                    const SizedBox(height: 48),
-
-                    Text('ABOUT', style: Type.label(p, size: 10)),
-                    const SizedBox(height: 14),
-                    Text(
-                      _version.isEmpty
-                          ? 'Wayfarer\n\nA calm pomodoro journey.'
-                          : 'Wayfarer $_version\n\nA calm pomodoro journey.',
-                      style: Type.body(p, size: 13, color: p.inkSoft),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -288,12 +314,7 @@ class _DurationRow extends StatelessWidget {
           enabled: minutes > min,
           onTap: () => onChanged(gm.clampMinutes(minutes - step, min, max)),
         ),
-        _ValueBox(
-          minutes: minutes,
-          min: min,
-          max: max,
-          onChanged: onChanged,
-        ),
+        _ValueBox(minutes: minutes, min: min, max: max, onChanged: onChanged),
         _StepButton(
           glyph: _StepGlyph.plus,
           enabled: minutes < max,
@@ -310,8 +331,11 @@ class _StepButton extends StatelessWidget {
   final _StepGlyph glyph;
   final bool enabled;
   final VoidCallback onTap;
-  const _StepButton(
-      {required this.glyph, required this.enabled, required this.onTap});
+  const _StepButton({
+    required this.glyph,
+    required this.enabled,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -341,12 +365,13 @@ class _StepPainter extends CustomPainter {
     final c = size.center(Offset.zero);
     final r = size.shortestSide * 0.42;
     canvas.drawCircle(
-        c,
-        r,
-        Paint()
-          ..color = color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2);
+      c,
+      r,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2,
+    );
     final arm = size.shortestSide * 0.18;
     final stroke = Paint()
       ..color = color
@@ -380,8 +405,9 @@ class _ValueBox extends StatefulWidget {
 
 class _ValueBoxState extends State<_ValueBox> {
   final FocusNode _focus = FocusNode();
-  late final TextEditingController _text =
-      TextEditingController(text: '${widget.minutes}');
+  late final TextEditingController _text = TextEditingController(
+    text: '${widget.minutes}',
+  );
   bool _editing = false;
 
   @override
@@ -393,8 +419,10 @@ class _ValueBoxState extends State<_ValueBox> {
   void _onFocusChange() {
     if (_focus.hasFocus) {
       // Select the whole value so a new number replaces it.
-      _text.selection =
-          TextSelection(baseOffset: 0, extentOffset: _text.text.length);
+      _text.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _text.text.length,
+      );
       if (!_editing) setState(() => _editing = true);
     } else if (_editing) {
       _commit();
@@ -407,8 +435,10 @@ class _ValueBoxState extends State<_ValueBox> {
     if (widget.minutes != old.minutes) {
       _text.text = '${widget.minutes}';
       if (_editing) {
-        _text.selection =
-            TextSelection(baseOffset: 0, extentOffset: _text.text.length);
+        _text.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _text.text.length,
+        );
       }
     }
   }
@@ -425,8 +455,11 @@ class _ValueBoxState extends State<_ValueBox> {
   /// loss (tap away, keyboard dismiss) and on submit.
   void _commit() {
     final parsed = int.tryParse(_text.text);
-    final clamped =
-        gm.clampMinutes(parsed ?? widget.minutes, widget.min, widget.max);
+    final clamped = gm.clampMinutes(
+      parsed ?? widget.minutes,
+      widget.min,
+      widget.max,
+    );
     _text.text = '$clamped';
     if (_editing) setState(() => _editing = false);
     widget.onChanged(clamped);
@@ -445,8 +478,9 @@ class _ValueBoxState extends State<_ValueBox> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-              color: p.ink.withValues(alpha: _editing ? 0.6 : 0.22),
-              width: 1.2),
+            color: p.ink.withValues(alpha: _editing ? 0.6 : 0.22),
+            width: 1.2,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -467,9 +501,14 @@ class _ValueBoxState extends State<_ValueBox> {
                 onSubmitted: (_) => _focus.unfocus(),
               ),
             ),
-            Text('m',
-                style: Type.label(p,
-                    size: 11, color: p.inkSoft.withValues(alpha: 0.8))),
+            Text(
+              'm',
+              style: Type.label(
+                p,
+                size: 11,
+                color: p.inkSoft.withValues(alpha: 0.8),
+              ),
+            ),
           ],
         ),
       ),
@@ -495,13 +534,14 @@ class _ResetButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: kDangerRed.withValues(alpha: 0.9), width: 1.4),
+          border: Border.all(
+            color: kDangerRed.withValues(alpha: 0.9),
+            width: 1.4,
+          ),
         ),
         child: Center(
           child: Text(
-            confirming
-                ? 'TAP AGAIN TO ERASE THE JOURNEY'
-                : 'RESET ALL DATA',
+            confirming ? 'TAP AGAIN TO ERASE THE JOURNEY' : 'RESET ALL DATA',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w400,
@@ -534,14 +574,16 @@ class _OutlineButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          border:
-              Border.all(color: p.ink.withValues(alpha: 0.5), width: 1.4),
+          border: Border.all(color: p.ink.withValues(alpha: 0.5), width: 1.4),
         ),
         child: Center(
           child: Text(
             label,
-            style:
-                Type.label(p, size: 12, color: p.ink.withValues(alpha: 0.85)),
+            style: Type.label(
+              p,
+              size: 12,
+              color: p.ink.withValues(alpha: 0.85),
+            ),
           ),
         ),
       ),
@@ -558,8 +600,11 @@ class _ThemeOption extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const _ThemeOption(
-      {required this.label, required this.selected, required this.onTap});
+  const _ThemeOption({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -580,9 +625,11 @@ class _ThemeOption extends StatelessWidget {
         ),
         child: Text(
           label.toUpperCase(),
-          style: Type.label(p,
-              size: 10.5,
-              color: p.ink.withValues(alpha: selected ? 0.9 : 0.45)),
+          style: Type.label(
+            p,
+            size: 10.5,
+            color: p.ink.withValues(alpha: selected ? 0.9 : 0.45),
+          ),
         ),
       ),
     );
@@ -617,9 +664,14 @@ class _ToggleRow extends StatelessWidget {
               children: [
                 Text(label, style: Type.body(p, size: 15)),
                 const SizedBox(height: 5),
-                Text(detail,
-                    style: Type.body(p,
-                        size: 12, color: p.inkSoft.withValues(alpha: 0.8))),
+                Text(
+                  detail,
+                  style: Type.body(
+                    p,
+                    size: 12,
+                    color: p.inkSoft.withValues(alpha: 0.8),
+                  ),
+                ),
               ],
             ),
           ),
@@ -651,7 +703,9 @@ class _Toggle extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-            color: p.ink.withValues(alpha: value ? 0.7 : 0.25), width: 1.2),
+          color: p.ink.withValues(alpha: value ? 0.7 : 0.25),
+          width: 1.2,
+        ),
       ),
       child: AnimatedAlign(
         duration: const Duration(milliseconds: 350),
