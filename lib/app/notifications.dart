@@ -3,13 +3,16 @@
 ///   • Completion alert ([phaseEndId], 'session_end_v4', high importance):
 ///     scheduled at phase start, announces the end with the app's chime and
 ///     ringer-following vibration. A fresh, distinct post so the OS re-alerts.
-///   • Ongoing status ([sessionActiveId], 'session_active', low importance): a
-///     silent "Focusing until …" banner while backgrounded; clears at end/reopen.
+///   • Ongoing status ([sessionActiveId], 'session_active', low importance):
+///     Android-only — a silent "Focusing until …" shade entry while backgrounded
+///     that clears at end/reopen. Desktop/iOS toast backends re-alert on every
+///     post, so this status is suppressed there (see [showSessionActive]).
 library;
 
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
@@ -231,12 +234,18 @@ class NotificationService {
   /// Silent and low-priority (its own channel), so it never chimes, vibrates, or
   /// peeks. [timeoutAfterMs], when given, auto-dismisses it the moment the
   /// session ends, just as the completion alert fires — leaving only the alert.
+  ///
+  /// Android-only: it relies on Android's silent, update-in-place ongoing
+  /// notification. Desktop/iOS toast backends have no such concept — every post
+  /// pops a fresh banner, so the status would re-alert on each window focus.
+  /// There we suppress it and rely on the app window plus the completion alert.
   Future<void> showSessionActive({
     required String title,
     required String body,
     int? timeoutAfterMs,
   }) async {
     if (!_ready) return;
+    if (defaultTargetPlatform != TargetPlatform.android) return;
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
         _activeChannelId,
