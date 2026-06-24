@@ -3,12 +3,16 @@
 ///   • Completion alert ([phaseEndId], 'session_end_v4', high importance):
 ///     scheduled at phase start, announces the end with the app's chime and
 ///     ringer-following vibration. A fresh, distinct post so the OS re-alerts.
-///   • Ongoing status ([sessionActiveId], 'session_active', low importance): a
-///     silent "Focusing until …" banner while backgrounded; clears at end/reopen.
+///   • Ongoing status ([sessionActiveId], 'session_active', low importance):
+///     Android-only — a silent "Focusing until …" shade entry while backgrounded
+///     that clears at end/reopen. Desktop/iOS toast backends re-alert on every
+///     post, so this status is suppressed there (see [showSessionActive]).
 library;
 
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
@@ -42,6 +46,12 @@ class NotificationService {
   static final Int64List _vibrationPattern =
       Int64List.fromList([0, 500, 250, 500]);
 
+  /// Windows toast registration. [_windowsGuid] identifies the COM activation
+  /// callback and must stay stable across releases; the app-user-model id
+  /// matches the Android applicationId so the app is identified consistently.
+  static const String _windowsAppUserModelId = 'com.wayfarer_pomodoro.app';
+  static const String _windowsGuid = '30cf9ff6-3f9c-426a-b74d-f1933607617b';
+
   /// The bundled completion chime (res/raw/session_chime.wav), produced by
   /// tool/generate_chime.dart. It plays via this notification's channel — the
   /// app ships no in-app audio, so the alert is the only session-end sound.
@@ -66,9 +76,19 @@ class NotificationService {
 
   Future<void> init() async {
     if (_ready) return;
+    // flutter_local_notifications has no web backend, so leave the service
+    // disabled on web and let every method below no-op. Android, Windows and
+    // Linux are all supported and initialize from the settings below.
+    if (kIsWeb) return;
     tzdata.initializeTimeZones();
     const settings = InitializationSettings(
       android: AndroidInitializationSettings('ic_stat_wayfarer'),
+      windows: WindowsInitializationSettings(
+        appName: 'Wayfarer',
+        appUserModelId: _windowsAppUserModelId,
+        guid: _windowsGuid,
+      ),
+      linux: LinuxInitializationSettings(defaultActionName: 'Open Wayfarer'),
     );
     try {
       await _plugin.initialize(settings);
@@ -107,8 +127,12 @@ class NotificationService {
   /// Whether the OS currently allows the app to post notifications.
   Future<bool> areEnabled() async {
     if (!_ready) return false;
+    // Desktop backends (Windows/Linux) have no runtime permission gate — once
+    // initialized, posting is allowed. Only Android exposes an enabled check.
+    final android = _android;
+    if (android == null) return true;
     try {
-      return await _android?.areNotificationsEnabled() ?? false;
+      return await android.areNotificationsEnabled() ?? false;
     } catch (_) {
       return false;
     }
@@ -120,9 +144,12 @@ class NotificationService {
   /// caller should guide the user to system settings via [openSystemSettings].
   Future<bool> ensurePermission() async {
     if (!_ready) return false;
+    // Desktop backends grant posting once initialized; only Android prompts.
+    final android = _android;
+    if (android == null) return true;
     try {
-      if (await _android?.areNotificationsEnabled() ?? false) return true;
-      return await _android?.requestNotificationsPermission() ?? false;
+      if (await android.areNotificationsEnabled() ?? false) return true;
+      return await android.requestNotificationsPermission() ?? false;
     } catch (_) {
       return false;
     }
@@ -151,6 +178,11 @@ class NotificationService {
           enableVibration: true,
           vibrationPattern: _vibrationPattern,
         ),
+        // Desktop backends use the system's default notification sound (the
+        // bundled chime is an Android raw resource). Title and body come from
+        // the show/schedule call, so empty details give a plain default alert.
+        windows: const WindowsNotificationDetails(),
+        linux: const LinuxNotificationDetails(),
       );
 
   Future<void> schedulePhaseEnd({
@@ -202,12 +234,18 @@ class NotificationService {
   /// Silent and low-priority (its own channel), so it never chimes, vibrates, or
   /// peeks. [timeoutAfterMs], when given, auto-dismisses it the moment the
   /// session ends, just as the completion alert fires — leaving only the alert.
+  ///
+  /// Android-only: it relies on Android's silent, update-in-place ongoing
+  /// notification. Desktop/iOS toast backends have no such concept — every post
+  /// pops a fresh banner, so the status would re-alert on each window focus.
+  /// There we suppress it and rely on the app window plus the completion alert.
   Future<void> showSessionActive({
     required String title,
     required String body,
     int? timeoutAfterMs,
   }) async {
     if (!_ready) return;
+    if (defaultTargetPlatform != TargetPlatform.android) return;
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
         _activeChannelId,

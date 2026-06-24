@@ -10,7 +10,6 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart' show Drag;
 import 'package:flutter/widgets.dart';
 
 import '../../app/app_controller.dart';
@@ -24,6 +23,7 @@ import '../../core/session_engine.dart' show dateKey, activeDaysInWindow;
 import '../../core/tiers.dart';
 import '../app_scope.dart';
 import '../format.dart';
+import '../layout.dart';
 import '../painters/badge_icons.dart';
 import '../painters/landscape.dart';
 import '../widgets/controls.dart';
@@ -62,17 +62,21 @@ class _HomeScreenState extends State<HomeScreen> {
       if (reduceMotion || !wasIdleish) {
         if (_scroll.hasClients) _scroll.jumpTo(target);
       } else if (_scroll.hasClients) {
-        _scroll.animateTo(target,
-            duration: const Duration(milliseconds: 750),
-            curve: Curves.easeInOut);
+        _scroll.animateTo(
+          target,
+          duration: const Duration(milliseconds: 750),
+          curve: Curves.easeInOut,
+        );
       }
     } else if (phase == Phase.focusRunning && _prevPhase != null) {
       if (_scroll.hasClients && _scroll.offset > 1) {
         reduceMotion
             ? _scroll.jumpTo(0)
-            : _scroll.animateTo(0,
+            : _scroll.animateTo(
+                0,
                 duration: const Duration(milliseconds: 650),
-                curve: Curves.easeInOut);
+                curve: Curves.easeInOut,
+              );
       }
     }
     _prevPhase = phase;
@@ -90,21 +94,66 @@ class _HomeScreenState extends State<HomeScreen> {
     // unrelated metric changes (it rebuilds often via the controller already).
     final topInset = MediaQuery.viewPaddingOf(context).top;
     final screenH = MediaQuery.sizeOf(context).height;
+    // The scene, scroll surface and chrome fill the window; each readable block
+    // (timer, journey, control) is scaled up modestly and centred (see
+    // [ContentBox]). `scale` sizes the header and positions the control so they
+    // line up with that scaled-and-centred content.
+    final scale = contentScaleFor(MediaQuery.sizeOf(context));
     // 240 (not 232) gives the header enough slack for the countdown numeral at
-    // its max size on wider/tablet screens, where it would otherwise overflow
-    // the fixed header by ~1px. Imperceptible on phones (see-through lower edge).
-    final headerHeight = topInset + 240;
-    _panelHeight = screenH - headerHeight;
+    // its max size; ×scale keeps that slack once the content is scaled up.
+    final headerHeight = topInset + 240 * scale;
+    // Floor at 0: on the first web frame MediaQuery height is momentarily 0 (and
+    // a very short window could be < headerHeight), which would make the panel
+    // negative and blow up the clamp bounds and SizedBox heights derived from it.
+    _panelHeight = (screenH - headerHeight).clamp(0.0, double.infinity);
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     // Only schedule the post-frame auto-scroll when the phase actually changed —
     // _maybeAutoScroll is a no-op otherwise, so registering a closure on every
     // (frequent) rebuild is wasted work.
     if (phase != _prevPhase) {
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => _maybeAutoScroll(phase));
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _maybeAutoScroll(phase),
+      );
     }
 
+    // The interactive scroll surface fills the window so its backgrounds are
+    // full-width; each readable block is scaled and centred (see [ContentBox]).
+    // No scrollbar: the surface scrolls by wheel, drag and trackpad, and the
+    // Journey rising over the world is the affordance (the app-wide
+    // scrollBehavior in main.dart suppresses Material's desktop scrollbar).
+    final scrollSurface = CustomScrollView(
+      controller: _scroll,
+      physics: const BouncingScrollPhysics(),
+      slivers: [
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _HeaderDelegate(
+            height: headerHeight,
+            topInset: topInset,
+            panelHeight: _panelHeight,
+            scale: scale,
+            state: s,
+            controller: controller,
+            palette: p,
+            scroll: _scroll,
+            displayMs: _displayMs(controller, s),
+          ),
+        ),
+        // First-screen spacer: an empty pane that lets the fixed world show
+        // through. The control floats above it (see the overlay).
+        SliverToBoxAdapter(child: SizedBox(height: _panelHeight)),
+        // The Journey rises over the world; its top fades the ground into the
+        // background colour.
+        SliverToBoxAdapter(
+          child: _JourneyBody(
+            state: s,
+            stamina: controller.displayStamina(),
+            controller: controller,
+          ),
+        ),
+      ],
+    );
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -133,84 +182,79 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        CustomScrollView(
-          controller: _scroll,
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _HeaderDelegate(
-                height: headerHeight,
-                topInset: topInset,
-                panelHeight: _panelHeight,
-                state: s,
-                controller: controller,
-                palette: p,
-                scroll: _scroll,
-                displayMs: _displayMs(controller, s),
-              ),
-            ),
-            // First-screen spacer: an empty pane that lets the fixed world
-            // show through. The control floats above it (see the overlay).
-            SliverToBoxAdapter(child: SizedBox(height: _panelHeight)),
-            // The Journey rises over the world; its top fades the ground into
-            // the background colour.
-            SliverToBoxAdapter(
-                child: _JourneyBody(
-              state: s,
-              stamina: controller.displayStamina(),
-              controller: controller,
-            )),
-          ],
-        ),
+        // The interactive UI fills the window; its backgrounds are full-width
+        // and each readable block is centred (see [ContentBox]).
+        scrollSurface,
         // Floating control: rises with the scroll, then pins under the header. A
         // sky cushion fades in so rising Journey content reads cleanly beneath it.
         AnimatedBuilder(
           animation: _scroll,
           builder: (context, child) {
             final offset = _scroll.hasClients ? _scroll.position.pixels : 0.0;
-            const blockH = 146.0;
+            final blockH = 146.0 * scale;
             // The band stays solid across the whole control, fading just below the
             // link so the rising Journey disappears cleanly beneath it.
-            const topPad = 4.0;
-            const bottomPad = 22.0;
+            final topPad = 4.0 * scale;
+            final bottomPad = 22.0 * scale;
             // Sticks under the timer numeral, so the ring rises well into the scroll.
-            final stickTop = headerHeight - 28;
+            final stickTop = headerHeight - 28 * scale;
             final restingTop = screenH - screenH * 0.085 - blockH;
             final ringTop = math.max(stickTop, restingTop - offset);
             // How much solid Journey content has climbed behind the stuck control
             // (0 over open landscape, 1 once it meets the ring): drives the backing.
-            final solidTop = headerHeight + _panelHeight + 140 - offset;
-            final cushion = (1 - (solidTop - stickTop) / 140).clamp(0.0, 1.0);
+            final solidTop = headerHeight + _panelHeight + 140 * scale - offset;
+            final cushion = (1 - (solidTop - stickTop) / (140 * scale)).clamp(
+              0.0,
+              1.0,
+            );
             return Positioned(
               top: ringTop - topPad,
               left: 0,
               right: 0,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      p.sky.withValues(alpha: 0),
-                      p.sky.withValues(alpha: cushion),
-                      p.sky.withValues(alpha: cushion),
-                      p.sky.withValues(alpha: 0),
-                    ],
-                    stops: const [0.0, 0.18, 0.82, 1.0],
+              child: Stack(
+                children: [
+                  // The cushion is purely decorative: ignore pointers so scroll
+                  // (drag and wheel) reaches the surface behind across the full
+                  // width. A plain DecoratedBox hit-tests true edge to edge and
+                  // would otherwise swallow input over the whole strip.
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              p.sky.withValues(alpha: 0),
+                              p.sky.withValues(alpha: cushion),
+                              p.sky.withValues(alpha: cushion),
+                              p.sky.withValues(alpha: 0),
+                            ],
+                            stops: const [0.0, 0.18, 0.82, 1.0],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.only(top: topPad, bottom: bottomPad),
-                  child: child,
-                ),
+                  Padding(
+                    padding: EdgeInsets.only(top: topPad, bottom: bottomPad),
+                    child: child,
+                  ),
+                ],
               ),
             );
           },
-          child: _ControlArea(state: s, controller: controller, scroll: _scroll),
+          // The control floats over the scroll surface but never captures
+          // scrolling: the cushion ignores pointers and the buttons are
+          // translucent (see BigControl/QuietLink), so drags and the wheel pass
+          // straight through to the surface — only taps land on the buttons.
+          // Every input type then scrolls uniformly across the full width, with
+          // the native Scrollable doing the work (no manual forwarding).
+          child: ContentBox(
+            child: _ControlArea(state: s, controller: controller),
+          ),
         ),
-        // Settings gear, always reachable.
+        // Settings gear, pinned to the window's top-right corner.
         Positioned(
           top: topInset + 6,
           right: 6,
@@ -244,6 +288,7 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
   final double height;
   final double topInset;
   final double panelHeight;
+  final double scale;
   final GameState state;
   final AppController controller;
   final Palette palette;
@@ -259,6 +304,7 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.height,
     required this.topInset,
     required this.panelHeight,
+    required this.scale,
     required this.state,
     required this.controller,
     required this.palette,
@@ -273,7 +319,10 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     final p = palette;
     final s = state;
     final phase = s.timer.phase;
@@ -287,10 +336,7 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
           const SizedBox(height: 12),
           SetDots(completed: s.sessionIndexInSet),
           const SizedBox(height: 18),
-          _Countdown(
-            ms: displayMs,
-            dimmed: phase == Phase.focusPaused,
-          ),
+          _Countdown(ms: displayMs, dimmed: phase == Phase.focusPaused),
           const SizedBox(height: 10),
           SizedBox(
             height: 38,
@@ -309,21 +355,25 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
       animation: scroll,
       builder: (context, child) {
         final offset = scroll.hasClients ? scroll.position.pixels : 0.0;
-        final solidTop = height + panelHeight + 140 - offset;
-        final merge = (1 - (solidTop - height) / 140).clamp(0.0, 1.0);
+        final solidTop = height + panelHeight + 140 * scale - offset;
+        final merge = (1 - (solidTop - height) / (140 * scale)).clamp(0.0, 1.0);
         return DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [p.sky, p.sky.withValues(alpha: merge)],
+              colors: [
+                p.sky,
+                p.sky.withValues(alpha: merge),
+              ],
               stops: const [0.62, 1.0],
             ),
           ),
           child: child,
         );
       },
-      child: body,
+      // The gradient fills the window width; the body is scaled and centred.
+      child: ContentBox(child: body),
     );
   }
 
@@ -333,7 +383,8 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
       old.displayMs != displayMs ||
       old.palette != palette ||
       old.height != height ||
-      old.panelHeight != panelHeight;
+      old.panelHeight != panelHeight ||
+      old.scale != scale;
 }
 
 int _displayMs(AppController controller, GameState s) {
@@ -447,14 +498,21 @@ class _DistanceRevealState extends State<_DistanceReveal> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('+ ${formatKm(widget.reveal.distanceKm)}',
-              style: Type.label(p, size: 14, color: p.ink)),
+          Text(
+            '+ ${formatKm(widget.reveal.distanceKm)}',
+            style: Type.label(p, size: 14, color: p.ink),
+          ),
           if (line != null)
             Padding(
               padding: const EdgeInsets.only(top: 6),
-              child: Text(line.toUpperCase(),
-                  style: Type.label(p,
-                      size: 10, color: p.inkSoft.withValues(alpha: 0.9))),
+              child: Text(
+                line.toUpperCase(),
+                style: Type.label(
+                  p,
+                  size: 10,
+                  color: p.inkSoft.withValues(alpha: 0.9),
+                ),
+              ),
             ),
         ],
       ),
@@ -491,85 +549,24 @@ String? _milestoneLine(RevealSequence r) {
 class _ControlArea extends StatelessWidget {
   final GameState state;
   final AppController controller;
-  final ScrollController scroll;
-  const _ControlArea(
-      {required this.state, required this.controller, required this.scroll});
+  const _ControlArea({required this.state, required this.controller});
 
   @override
   Widget build(BuildContext context) {
-    // Compact 146px block, placed by the overlay. _ScrollThrough catches drags
-    // across the whole full-width band (not just the ring) and forwards them.
-    return _ScrollThrough(
-      controller: scroll,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ControlFor(state: state, controller: controller),
-          SizedBox(
-            height: 42,
-            child:
-                Center(child: _LinkFor(state: state, controller: controller)),
+    // Compact 146px block, centred by the overlay's ContentBox. It floats over
+    // the CustomScrollView and stays pointer-transparent except on the controls
+    // themselves, so the scroll view handles wheel/drag across the full width.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ControlFor(state: state, controller: controller),
+        SizedBox(
+          height: 42,
+          child: Center(
+            child: _LinkFor(state: state, controller: controller),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Forwards vertical drags anywhere on its child to [controller]'s scroll
-/// position. The control floats in a `Positioned` overlay (a separate hit-test
-/// branch), so its band would otherwise be a scroll dead zone. Driving the
-/// position via `ScrollPosition.drag` gives fling ballistics for free; a still
-/// touch falls through to the ring/link tap (drag wins only once the finger moves).
-class _ScrollThrough extends StatefulWidget {
-  final ScrollController controller;
-  final Widget child;
-  const _ScrollThrough({required this.controller, required this.child});
-
-  @override
-  State<_ScrollThrough> createState() => _ScrollThroughState();
-}
-
-class _ScrollThroughState extends State<_ScrollThrough> {
-  Drag? _drag;
-
-  void _onStart(DragStartDetails details) {
-    if (!widget.controller.hasClients) return;
-    _drag = widget.controller.position.drag(details, () => _drag = null);
-  }
-
-  void _onUpdate(DragUpdateDetails details) => _drag?.update(details);
-
-  void _onEnd(DragEndDetails details) {
-    _drag?.end(details);
-    _drag = null;
-  }
-
-  void _onCancel() {
-    _drag?.cancel();
-    _drag = null;
-  }
-
-  @override
-  void dispose() {
-    // The control overlay rebuilds across timer phases; if it unmounts mid-drag,
-    // cancel so the scroll position isn't left with a dangling drag activity.
-    _drag?.cancel();
-    _drag = null;
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Opaque so the detector spans the full-width child, catching drags across
-    // the whole band. Taps still reach the buttons (a stationary press wins).
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onVerticalDragStart: _onStart,
-      onVerticalDragUpdate: _onUpdate,
-      onVerticalDragEnd: _onEnd,
-      onVerticalDragCancel: _onCancel,
-      child: widget.child,
+        ),
+      ],
     );
   }
 }
@@ -587,22 +584,25 @@ class _ControlFor extends StatelessWidget {
         return BigControl(label: 'Begin', onTap: controller.startFocus);
       case Phase.focusRunning:
         return BigControl(
-            label: '',
-            glyph: BigControlGlyph.pause,
-            onTap: controller.pauseFocus);
+          label: '',
+          glyph: BigControlGlyph.pause,
+          onTap: controller.pauseFocus,
+        );
       case Phase.focusPaused:
         return BigControl(label: 'Resume', onTap: controller.resumeFocus);
       case Phase.focusComplete:
         return BigControl(
-            label: state.timer.breakKind == BreakKind.long
-                ? 'Begin\nlong break'
-                : 'Begin\nbreak',
-            onTap: controller.startBreak);
+          label: state.timer.breakKind == BreakKind.long
+              ? 'Begin\nlong break'
+              : 'Begin\nbreak',
+          onTap: controller.startBreak,
+        );
       case Phase.breakRunning:
         return BigControl(
-            label: 'Begin\nearly',
-            subdued: true,
-            onTap: controller.startFocusDuringBreak);
+          label: 'Begin\nearly',
+          subdued: true,
+          onTap: controller.startFocusDuringBreak,
+        );
     }
   }
 }
@@ -645,11 +645,13 @@ class _JourneyBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = PaletteScope.of(context);
+    final scale = contentScaleFor(MediaQuery.sizeOf(context));
     return Column(
       children: [
-        // The ground dissolves into the background colour.
+        // The ground dissolves into the background colour. The fade and the sky
+        // fill the window width; only the reading content is scaled and centred.
         SizedBox(
-          height: 140,
+          height: 140 * scale,
           child: DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -663,23 +665,29 @@ class _JourneyBody extends StatelessWidget {
         ),
         ColoredBox(
           color: p.sky,
-          child: Padding(
-            // A breath of sky above 'The road so far' before the odometer,
-            // so the section clears the floating control as it scrolls up.
-            padding: EdgeInsets.fromLTRB(
-                32, 44, 32, MediaQuery.viewPaddingOf(context).bottom + 56),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _DistanceSection(state: state),
-                const SizedBox(height: 48),
-                _ProgressSection(state: state, stamina: stamina),
-                const SizedBox(height: 48),
-                _StatsSection(state: state, controller: controller),
-                const SizedBox(height: 48),
-                // Markers close the Journey — the collection earned along it.
-                _MarkersSection(badgeIds: state.badgeIds),
-              ],
+          child: ContentBox(
+            child: Padding(
+              // A breath of sky above 'The road so far' before the odometer,
+              // so the section clears the floating control as it scrolls up.
+              padding: EdgeInsets.fromLTRB(
+                32,
+                44,
+                32,
+                MediaQuery.viewPaddingOf(context).bottom + 56,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _DistanceSection(state: state),
+                  const SizedBox(height: 48),
+                  _ProgressSection(state: state, stamina: stamina),
+                  const SizedBox(height: 48),
+                  _StatsSection(state: state, controller: controller),
+                  const SizedBox(height: 48),
+                  // Markers close the Journey — the collection earned along it.
+                  _MarkersSection(badgeIds: state.badgeIds),
+                ],
+              ),
             ),
           ),
         ),
@@ -701,20 +709,30 @@ class _DistanceSection extends StatelessWidget {
       children: [
         Text('THE ROAD SO FAR', style: Type.label(p, size: 10)),
         const SizedBox(height: 16),
-        Text(formatKm(state.lifetimeKm),
-            style: Type.reveal(p, 50), textAlign: TextAlign.center),
+        Text(
+          formatKm(state.lifetimeKm),
+          style: Type.reveal(p, 50),
+          textAlign: TextAlign.center,
+        ),
         const SizedBox(height: 14),
         if (passed != null)
-          Text('Farther than the ${passed.name}.',
-              textAlign: TextAlign.center,
-              style: Type.body(p, color: p.inkSoft)),
+          Text(
+            'Farther than the ${passed.name}.',
+            textAlign: TextAlign.center,
+            style: Type.body(p, color: p.inkSoft),
+          ),
         if (upcoming != null)
           Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Text('Ahead: ${upcoming.name} · ${formatKm(upcoming.km)}',
-                textAlign: TextAlign.center,
-                style: Type.body(p,
-                    size: 13, color: p.inkSoft.withValues(alpha: 0.65))),
+            child: Text(
+              'Ahead: ${upcoming.name} · ${formatKm(upcoming.km)}',
+              textAlign: TextAlign.center,
+              style: Type.body(
+                p,
+                size: 13,
+                color: p.inkSoft.withValues(alpha: 0.65),
+              ),
+            ),
           ),
       ],
     );
@@ -745,8 +763,10 @@ class _ProgressSection extends StatelessWidget {
         const SizedBox(height: 16),
         Text(tier.name, style: Type.title(p, size: 27)),
         const SizedBox(height: 6),
-        Text('LEVEL ${state.level} · ${formatPace(state.paceKmh).toUpperCase()}',
-            style: Type.label(p, size: 11)),
+        Text(
+          'LEVEL ${state.level} · ${formatPace(state.paceKmh).toUpperCase()}',
+          style: Type.label(p, size: 11),
+        ),
         const SizedBox(height: 30),
         _Meter(
           label: 'EXPERIENCE',
@@ -761,10 +781,10 @@ class _ProgressSection extends StatelessWidget {
           caption: stamina <= 0
               ? 'need rest'
               : state.timer.phase == Phase.focusRunning
-                  ? 'full pace'
-                  : stamina.round() >= 100
-                      ? 'rested'
-                      : 'recovering',
+              ? 'full pace'
+              : stamina.round() >= 100
+              ? 'rested'
+              : 'recovering',
           fraction: staminaFrac,
         ),
         const SizedBox(height: 36),
@@ -809,8 +829,9 @@ class _StatsSection extends StatelessWidget {
         Row(
           children: [
             _Stat(
-                label: 'FOCUS',
-                value: formatFocusTime(state.totalFocusSeconds)),
+              label: 'FOCUS',
+              value: formatFocusTime(state.totalFocusSeconds),
+            ),
             _Stat(label: 'SESSIONS', value: thousands(state.sessionsCompleted)),
             _Stat(label: 'SETS', value: thousands(state.setsCompleted)),
           ],
@@ -819,22 +840,33 @@ class _StatsSection extends StatelessWidget {
         Text('LAST 14 DAYS', style: Type.label(p, size: 10)),
         const SizedBox(height: 18),
         _History(dailyMinutes: state.dailyFocusMinutes),
-        Builder(builder: (context) {
-          // +5% XP gain per active day in the window — shown only when earned,
-          // so an empty chart stays quiet. Same window the chart draws.
-          final pct = (gm.consistencyBonusFraction(activeDaysInWindow(
-                      state.dailyFocusMinutes,
-                      controller.nowMs)) *
-                  100)
-              .round();
-          if (pct <= 0) return const SizedBox.shrink();
-          return Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Text('+$pct% EXP GAIN',
-                style: Type.label(p,
-                    size: 10, color: p.inkSoft.withValues(alpha: 0.9))),
-          );
-        }),
+        Builder(
+          builder: (context) {
+            // +5% XP gain per active day in the window — shown only when earned,
+            // so an empty chart stays quiet. Same window the chart draws.
+            final pct =
+                (gm.consistencyBonusFraction(
+                          activeDaysInWindow(
+                            state.dailyFocusMinutes,
+                            controller.nowMs,
+                          ),
+                        ) *
+                        100)
+                    .round();
+            if (pct <= 0) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                '+$pct% EXP GAIN',
+                style: Type.label(
+                  p,
+                  size: 10,
+                  color: p.inkSoft.withValues(alpha: 0.9),
+                ),
+              ),
+            );
+          },
+        ),
       ],
     );
   }
@@ -874,9 +906,14 @@ class _Meter extends StatelessWidget {
         const SizedBox(height: 12),
         _Bar(fraction: fraction),
         const SizedBox(height: 8),
-        Text(caption.toUpperCase(),
-            style: Type.label(p,
-                size: 9, color: p.inkSoft.withValues(alpha: 0.7))),
+        Text(
+          caption.toUpperCase(),
+          style: Type.label(
+            p,
+            size: 9,
+            color: p.inkSoft.withValues(alpha: 0.7),
+          ),
+        ),
       ],
     );
   }
@@ -906,14 +943,19 @@ class _BarPainter extends CustomPainter {
   final double fraction;
   final Color track;
   final Color fill;
-  _BarPainter(
-      {required this.fraction, required this.track, required this.fill});
+  _BarPainter({
+    required this.fraction,
+    required this.track,
+    required this.fill,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final r = Radius.circular(size.height / 2);
     canvas.drawRRect(
-        RRect.fromRectAndRadius(Offset.zero & size, r), Paint()..color = track);
+      RRect.fromRectAndRadius(Offset.zero & size, r),
+      Paint()..color = track,
+    );
     if (fraction > 0) {
       final w = math.max(size.height, size.width * fraction);
       canvas.drawRRect(
@@ -963,8 +1005,10 @@ class _TierPath extends StatelessWidget {
       final prevIdx = current.index - 1;
       final prevTier = prevIdx < kBaseTiers.length
           ? kBaseTiers[prevIdx]
-          : tierForLevel(kEternalLevel +
-              (prevIdx - kBaseTiers.length + 1) * kProceduralTierInterval);
+          : tierForLevel(
+              kEternalLevel +
+                  (prevIdx - kBaseTiers.length + 1) * kProceduralTierInterval,
+            );
       entries.add((prevTier, 0.45));
     }
     entries.add((current, 1.0));
@@ -987,9 +1031,14 @@ class _TierPath extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 14),
-                Text('${tier.name} · level ${tier.level}',
-                    style: Type.body(p,
-                        size: 13, color: p.ink.withValues(alpha: alpha))),
+                Text(
+                  '${tier.name} · level ${tier.level}',
+                  style: Type.body(
+                    p,
+                    size: 13,
+                    color: p.ink.withValues(alpha: alpha),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1027,16 +1076,17 @@ class _BadgeGrid extends StatelessWidget {
         return c != 0 ? c : _orderKey(x).compareTo(_orderKey(y));
       });
     if (earned.isEmpty) {
-      return Text('The road ahead holds its markers.',
-          style: Type.body(p, color: p.inkSoft));
+      return Text(
+        'The road ahead holds its markers.',
+        style: Type.body(p, color: p.inkSoft),
+      );
     }
     // A fixed four-column grid: rows of four, the last row left-aligned.
     return Column(
       children: [
         for (var i = 0; i < earned.length; i += 4)
           Padding(
-            padding:
-                EdgeInsets.only(bottom: i + 4 < earned.length ? 26 : 0),
+            padding: EdgeInsets.only(bottom: i + 4 < earned.length ? 26 : 0),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1067,10 +1117,12 @@ class _Marker extends StatelessWidget {
         children: [
           BadgeIcon(glyph: glyphForBadge(badge), size: 40),
           const SizedBox(height: 9),
-          Text(badge.name,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              style: Type.body(p, size: 10, color: p.inkSoft)),
+          Text(
+            badge.name,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            style: Type.body(p, size: 10, color: p.inkSoft),
+          ),
         ],
       ),
     );
@@ -1097,25 +1149,27 @@ class _History extends StatelessWidget {
         children: [
           for (final day in days)
             Expanded(
-              child: Builder(builder: (context) {
-                final minutes = dailyMinutes[day] ?? 0;
-                final h = minutes <= 0
-                    ? 4.0
-                    : (4 + (minutes / 150).clamp(0.0, 1.0) * (maxBar - 4));
-                return Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Container(
-                    width: 5,
-                    height: h,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(3),
-                      color: minutes <= 0
-                          ? p.ink.withValues(alpha: 0.12)
-                          : p.inkSoft.withValues(alpha: 0.85),
+              child: Builder(
+                builder: (context) {
+                  final minutes = dailyMinutes[day] ?? 0;
+                  final h = minutes <= 0
+                      ? 4.0
+                      : (4 + (minutes / 150).clamp(0.0, 1.0) * (maxBar - 4));
+                  return Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Container(
+                      width: 5,
+                      height: h,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(3),
+                        color: minutes <= 0
+                            ? p.ink.withValues(alpha: 0.12)
+                            : p.inkSoft.withValues(alpha: 0.85),
+                      ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                },
+              ),
             ),
         ],
       ),
@@ -1165,8 +1219,11 @@ class _GearPainter extends CustomPainter {
     for (var i = 0; i < 8; i++) {
       final a = i * math.pi / 4;
       final d = Offset(math.cos(a), math.sin(a));
-      canvas.drawLine(c + d * (r + size.shortestSide * 0.04),
-          c + d * (r + size.shortestSide * 0.16), stroke);
+      canvas.drawLine(
+        c + d * (r + size.shortestSide * 0.04),
+        c + d * (r + size.shortestSide * 0.16),
+        stroke,
+      );
     }
     canvas.drawCircle(c, size.shortestSide * 0.07, Paint()..color = color);
   }

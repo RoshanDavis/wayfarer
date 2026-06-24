@@ -372,7 +372,9 @@ class AppController extends ChangeNotifier {
   /// Keeps the quiet, ongoing "session in progress" status in sync with the
   /// phase: shown whenever a focus or break is running — in the foreground as
   /// well as the background — and cleared otherwise. Driven from [_apply] (every
-  /// transition), launch, and resume.
+  /// transition), launch, and resume. The "shown" half is Android-only; on
+  /// desktop/iOS [NotificationService.showSessionActive] no-ops (it would re-pop
+  /// a toast on every focus), so these calls only ever clear there.
   void _syncSessionActiveNotification() {
     final phase = _state.timer.phase;
     if (phase == Phase.focusRunning || phase == Phase.breakRunning) {

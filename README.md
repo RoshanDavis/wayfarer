@@ -49,11 +49,50 @@ tinted by the map's single accent hue (light ramp / inverted dark ramp).
 
 ## Build
 
-```
+```sh
 flutter pub get
 flutter test
-flutter build apk --release
 ```
 
-Android (minSdk 26+), portrait. iOS/web later from the same codebase — all
-game logic is platform-agnostic.
+All game logic is platform-agnostic; the same codebase targets every platform.
+
+```sh
+flutter build apk --release        # Android (minSdk 26+)
+flutter build web --release        # Web (PWA)
+flutter build windows --release    # Windows desktop (needs VS "Desktop development with C++")
+flutter build linux --release      # Linux desktop (build on Linux/WSL2 — no cross-compile)
+```
+
+### Windows Store (MSIX)
+
+Packaging is configured under `msix_config:` in `pubspec.yaml` (via the `msix`
+dev dependency). Build with:
+
+```powershell
+pwsh tool/build_msix.ps1            # local self-signed test package
+pwsh tool/build_msix.ps1 -Store     # unsigned package for Microsoft Store upload
+```
+
+The script uses `dart run msix:build` to generate the package, then the Windows
+SDK's `makeappx`/`signtool` to pack and sign it (the msix package's *bundled*
+makeappx fails to start on this machine — a side-by-side runtime error — so
+`dart run msix:create` is not used). Output: `build/windows/x64/runner/*.msix`.
+
+Before the first **Store** build, reserve the app in
+[Partner Center](https://partner.microsoft.com/dashboard) and replace the three
+`STORE`-marked values in `pubspec.yaml > msix_config` (`identity_name`,
+`publisher_display_name`, `publisher`) with the ones from *Product management →
+Product identity*. The Store signs the package itself, so `-Store` emits an
+unsigned `.msix` on purpose. To install the **local test** package, trust its
+test certificate once (the script prints the exact admin command).
+
+Notifications use the system backend on Android, Windows and Linux; the web has
+no notification backend, so those controls are hidden there (the timer and game
+are unaffected). On phones the UI is portrait; on desktop/web wide windows it
+stays a centred phone-width column.
+
+**iOS / macOS** require a Mac with Xcode and cannot be built on Windows or Linux.
+The codebase is ready for them (scaffold with `flutter create --platforms=ios,macos .`
+on a Mac); build via a Mac or cloud macOS CI (e.g. Codemagic, GitHub Actions
+`macos` runners). iOS device/store distribution also needs an Apple Developer
+account.

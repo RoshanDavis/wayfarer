@@ -1,7 +1,7 @@
 name: wayfarer
 description: "A calm pomodoro focus timer fused with an idle travel game."
 publish_to: "none"
-version: 1.3.6+20
+version: 1.4.1+23
 
 environment:
   sdk: ^3.12.2
@@ -19,6 +19,48 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  image: ^4.8.0 # used by tool/gen_windows_icon.dart
+  msix: ^3.17.0
 
 flutter:
   uses-material-design: true
+
+# App icons are generated from the shared source mark (assets/icon.png):
+#   - Web favicon/PWA icons: `dart run flutter_launcher_icons` (config below).
+#   - Windows .exe icon: `dart run tool/gen_windows_icon.dart` — a proper
+#     multi-resolution .ico (flutter_launcher_icons only emits a single 256px
+#     image, which downscales poorly at taskbar/Explorer sizes).
+# Android keeps its hand-crafted adaptive (vector) icon, so neither touches it.
+flutter_launcher_icons:
+  image_path: "assets/icon.png"
+  web:
+    generate: true
+    image_path: "assets/icon.png"
+    background_color: "#ECEAE6" # matches the existing manifest
+    theme_color: "#ECEAE6"
+
+# Windows Store / MSIX packaging (dev_dependency: msix).
+#   Local test build (self-signed, installs a test cert so you can run it):
+#     dart run msix:create
+#   Store build (unsigned; Microsoft signs it on upload):
+#     dart run msix:create --store
+#
+# Before the Store build, reserve the app in Partner Center, then replace the
+# three values marked STORE below with those from
+#   Partner Center > your app > Product management > Product identity.
+# The local test build ignores `publisher` (it uses the test cert's subject),
+# so the placeholder is harmless until you publish.
+msix_config:
+  display_name: Wayfarer - A Pomodoro Journey
+  msix_version: 1.4.1.0 # a.b.c.d; the Store requires the 4th part to be 0
+  logo_path: assets/icon.png
+  # STORE: Package/Identity/Name (e.g. 12345Publisher.Wayfarer). For local
+  # testing any 3–50 char [a-zA-Z0-9.-] string works.
+  identity_name: MonsoonWinds.Wayfarer-APomodoroJourney
+  # STORE: Package/Properties/PublisherDisplayName (your registered seller name).
+  publisher_display_name: Monsoon Winds
+  # STORE: Package/Properties/Publisher — the "CN=..." Publisher ID from Partner
+  # Center. Required only for the --store build; ignored for local test builds.
+  publisher: CN=12804A74-1DCE-4051-97BF-B404628AF9DC
+  # store: true  # uncomment for the Store build (or pass --store on the CLI)

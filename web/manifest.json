@@ -1,11 +1,11 @@
 {
-    "name": "wayfarer",
-    "short_name": "wayfarer",
+    "name": "Wayfarer",
+    "short_name": "Wayfarer",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#ECEAE6",
+    "theme_color": "#ECEAE6",
+    "description": "A calm pomodoro focus timer fused with an idle travel game.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

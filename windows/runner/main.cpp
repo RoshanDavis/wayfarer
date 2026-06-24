@@ -26,8 +26,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
-  if (!window.Create(L"wayfarer", origin, size)) {
+  // Open at a portrait, phone-like size to match the app's layout; the window
+  // stays freely resizable (min size enforced in Win32Window::MessageHandler).
+  Win32Window::Size size(440, 900);
+  if (!window.Create(L"Wayfarer", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

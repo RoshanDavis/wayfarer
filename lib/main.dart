@@ -37,8 +37,7 @@ class WayfarerApp extends StatefulWidget {
   State<WayfarerApp> createState() => _WayfarerAppState();
 }
 
-class _WayfarerAppState extends State<WayfarerApp>
-    with WidgetsBindingObserver {
+class _WayfarerAppState extends State<WayfarerApp> with WidgetsBindingObserver {
   bool _foreground = true;
 
   AppController get controller => widget.controller;
@@ -81,6 +80,7 @@ class _WayfarerAppState extends State<WayfarerApp>
       child: MaterialApp(
         title: 'Wayfarer',
         debugShowCheckedModeBanner: false,
+        scrollBehavior: const _NoScrollbar(),
         // The palette is provided above the Navigator so every route —
         // Horizon, the reveal, Journey, Settings — shares the same animated
         // tonal ramp.
@@ -91,19 +91,23 @@ class _WayfarerAppState extends State<WayfarerApp>
             final brightness = switch (s.settings.theme) {
               ThemePreference.light => Brightness.light,
               ThemePreference.dark => Brightness.dark,
-              ThemePreference.system =>
-                MediaQuery.platformBrightnessOf(context),
+              ThemePreference.system => MediaQuery.platformBrightnessOf(
+                context,
+              ),
             };
 
-            final softened = s.timer.phase == Phase.breakRunning ||
+            final softened =
+                s.timer.phase == Phase.breakRunning ||
                 s.timer.phase == Phase.breakComplete;
 
             // Accent starts at a random place each open (accentSeed) and steps
             // through the palettes per completed session; PaletteTransition
             // crossfades to the new colour.
             final palette = buildPalette(
-              map: accentForSession(s.sessionsCompleted,
-                  seed: controller.accentSeed),
+              map: accentForSession(
+                s.sessionsCompleted,
+                seed: controller.accentSeed,
+              ),
               brightness: brightness,
               cycle: mapCycleForLevel(s.level),
               soften: softened ? 1 : 0,
@@ -134,6 +138,21 @@ class _WayfarerAppState extends State<WayfarerApp>
       ),
     );
   }
+}
+
+/// Hides the scrollbar app-wide. On desktop and web MaterialScrollBehavior
+/// would otherwise draw one over every scroll surface (home and settings); the
+/// surfaces scroll by wheel, drag and trackpad, and the Journey rising over the
+/// world is the affordance — a bar would just clutter the calm scene.
+class _NoScrollbar extends MaterialScrollBehavior {
+  const _NoScrollbar();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => child;
 }
 
 /// The home route — a single scrollable surface. Rebuilds on every state
