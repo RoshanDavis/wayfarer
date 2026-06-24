@@ -553,8 +553,9 @@ class _ControlArea extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Compact 146px block, centred by the overlay's ContentBox and wrapped by
-    // its full-width _ScrollThrough so the whole row forwards scroll.
+    // Compact 146px block, centred by the overlay's ContentBox. It floats over
+    // the CustomScrollView and stays pointer-transparent except on the controls
+    // themselves, so the scroll view handles wheel/drag across the full width.
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [

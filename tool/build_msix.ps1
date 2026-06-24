@@ -1,4 +1,4 @@
-# Build a Windows MSIX for Wayfarer.
+﻿# Build a Windows MSIX for Wayfarer.
 #
 # `dart run msix:create` cannot be used as-is here: the msix package's bundled
 # makeappx.exe fails to start on this machine ("side-by-side configuration is

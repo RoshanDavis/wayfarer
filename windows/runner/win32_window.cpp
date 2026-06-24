@@ -53,6 +53,32 @@ void EnableFullDpiSupportIfAvailable(HWND hwnd) {
   FreeLibrary(user32_module);
 }
 
+using AdjustWindowRectExForDpiPtr = BOOL __stdcall(LPRECT lpRect, DWORD dwStyle,
+                                                   BOOL bMenu, DWORD dwExStyle,
+                                                   UINT dpi);
+
+// Expands |rect| from a client-area rectangle to the full outer-window
+// rectangle for |hwnd|, accounting for its frame at the given |dpi|. Prefers
+// the DPI-aware |AdjustWindowRectExForDpi| (Windows 10 1607+), falling back to
+// the non-DPI-aware API on older systems.
+void AdjustClientRectForDpi(HWND hwnd, RECT* rect, UINT dpi) {
+  const DWORD style = static_cast<DWORD>(GetWindowLongPtr(hwnd, GWL_STYLE));
+  const DWORD ex_style = static_cast<DWORD>(GetWindowLongPtr(hwnd, GWL_EXSTYLE));
+  const BOOL has_menu = GetMenu(hwnd) != nullptr;
+  HMODULE user32_module = LoadLibraryA("User32.dll");
+  if (user32_module) {
+    auto adjust_for_dpi = reinterpret_cast<AdjustWindowRectExForDpiPtr*>(
+        GetProcAddress(user32_module, "AdjustWindowRectExForDpi"));
+    if (adjust_for_dpi != nullptr) {
+      adjust_for_dpi(rect, style, has_menu, ex_style, dpi);
+      FreeLibrary(user32_module);
+      return;
+    }
+    FreeLibrary(user32_module);
+  }
+  AdjustWindowRectEx(rect, style, has_menu, ex_style);
+}
+
 }  // namespace
 
 // Manages the Win32Window's window class registration.
@@ -208,13 +234,18 @@ Win32Window::MessageHandler(HWND hwnd,
     }
 
     case WM_GETMINMAXINFO: {
-      // Enforce a minimum window size so the portrait UI never collapses. The
-      // logical minimum is scaled to the window's current DPI.
+      // Enforce a minimum *client* size so the portrait UI never collapses.
+      // The logical minimum is scaled to the window's current DPI and then
+      // expanded to the outer-window size so the non-client frame doesn't eat
+      // into the usable area.
       auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
       const UINT dpi = GetDpiForWindow(hwnd);
       const double scale = dpi ? dpi / 96.0 : 1.0;
-      info->ptMinTrackSize.x = static_cast<LONG>(360 * scale);
-      info->ptMinTrackSize.y = static_cast<LONG>(640 * scale);
+      RECT rect{0, 0, static_cast<LONG>(360 * scale),
+                static_cast<LONG>(640 * scale)};
+      AdjustClientRectForDpi(hwnd, &rect, dpi);
+      info->ptMinTrackSize.x = rect.right - rect.left;
+      info->ptMinTrackSize.y = rect.bottom - rect.top;
       return 0;
     }
 

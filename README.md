@@ -49,14 +49,14 @@ tinted by the map's single accent hue (light ramp / inverted dark ramp).
 
 ## Build
 
-```
+```sh
 flutter pub get
 flutter test
 ```
 
 All game logic is platform-agnostic; the same codebase targets every platform.
 
-```
+```sh
 flutter build apk --release        # Android (minSdk 26+)
 flutter build web --release        # Web (PWA)
 flutter build windows --release    # Windows desktop (needs VS "Desktop development with C++")
@@ -68,7 +68,7 @@ flutter build linux --release      # Linux desktop (build on Linux/WSL2 — no c
 Packaging is configured under `msix_config:` in `pubspec.yaml` (via the `msix`
 dev dependency). Build with:
 
-```
+```powershell
 pwsh tool/build_msix.ps1            # local self-signed test package
 pwsh tool/build_msix.ps1 -Store     # unsigned package for Microsoft Store upload
 ```

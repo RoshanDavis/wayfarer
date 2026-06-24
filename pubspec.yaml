@@ -1,7 +1,7 @@
 name: wayfarer
 description: "A calm pomodoro focus timer fused with an idle travel game."
 publish_to: "none"
-version: 1.4.0+22
+version: 1.4.1+23
 
 environment:
   sdk: ^3.12.2
@@ -53,7 +53,7 @@ flutter_launcher_icons:
 # so the placeholder is harmless until you publish.
 msix_config:
   display_name: Wayfarer - A Pomodoro Journey
-  msix_version: 1.4.0.0 # a.b.c.d; the Store requires the 4th part to be 0
+  msix_version: 1.4.1.0 # a.b.c.d; the Store requires the 4th part to be 0
   logo_path: assets/icon.png
   # STORE: Package/Identity/Name (e.g. 12345Publisher.Wayfarer). For local
   # testing any 3–50 char [a-zA-Z0-9.-] string works.

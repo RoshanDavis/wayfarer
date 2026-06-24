@@ -264,10 +264,6 @@ class NotificationService {
             ? timeoutAfterMs
             : null,
       ),
-      // Keep the ongoing status quiet on desktop too, matching the silent
-      // Android channel — no sound when a session begins.
-      windows: WindowsNotificationDetails(audio: WindowsNotificationAudio.silent()),
-      linux: const LinuxNotificationDetails(suppressSound: true),
     );
     try {
       await _plugin.show(
